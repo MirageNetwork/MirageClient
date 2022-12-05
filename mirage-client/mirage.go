@@ -54,7 +54,7 @@ func main() {
 }
 
 func onReady() {
-	doInit()
+	//	doInit()
 
 	systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
 	systray.SetTitle("蜃境")
@@ -110,7 +110,9 @@ func onReady() {
 				userMenu.Show()
 				connectMenu.Hide()
 				disconnMenu.Show()
-				nodeMenu.SetTitle("本设备：" + st.Self.HostName + " (" + st.Self.TailscaleIPs[0].String() + ")")
+				if len(st.Self.TailscaleIPs) > 0 {
+					nodeMenu.SetTitle("本设备：" + st.Self.HostName + " (" + st.Self.TailscaleIPs[0].String() + ")")
+				}
 				nodeMenu.Enable()
 				nodeMenu.Show()
 			}
@@ -124,7 +126,7 @@ func onReady() {
 				fmt.Println("you clicked version")
 				continue
 			case <-loginMenu.ClickedCh:
-				kickOffLogin(notifyCh)
+				kickOffLogin()
 				//open.Run(st.AuthURL)
 				continue
 			case <-userLogoutMenu.ClickedCh:
@@ -138,8 +140,10 @@ func onReady() {
 				doDisconn()
 				continue
 			case <-nodeMenu.ClickedCh:
-				clipboard.WriteAll(st.Self.TailscaleIPs[0].String())
-				beeep.Notify("蜃境", "您的本设备IP已复制", "Mirage_logo.png")
+				if len(st.Self.TailscaleIPs) > 0 {
+					clipboard.WriteAll(st.Self.TailscaleIPs[0].String())
+					beeep.Notify("蜃境", "您的本设备IP已复制", "Mirage_logo.png")
+				}
 				continue
 			case msg := <-notifyCh:
 				if msg.NType == OpenURL {

@@ -9,8 +9,8 @@ import (
 	"reflect"
 	"sync"
 	"syscall"
-	"time"
 
+	"github.com/skratchdot/open-golang/open"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 )
@@ -35,36 +35,12 @@ func updatePrefs(st *ipnstate.Status, prefs, curPrefs *ipn.Prefs) (simpleUp bool
 	return simpleUp, justEditMP, nil
 }
 
-func kickOffLogin(notifyCh chan Notify) {
-	st, err := LC.Status(ctx)
-	if err != nil {
-		logNotify("获取当前守护程序状态失败！", err)
-	}
-	origAuthURL := st.AuthURL
-	fmt.Println(origAuthURL)
-
+func kickOffLogin() {
 	prefs := CreateDefaultPref()
-	curPrefs, err := localClient.GetPrefs(ctx)
-	if err != nil {
-		logNotify("获取当前守护程序Pref失败！", err)
-	}
-	prefs.ProfileName = curPrefs.ProfileName
-
-	_, justEditMP, err := updatePrefs(st, prefs, curPrefs)
-	if err != nil {
-		logNotify("获取Pref更新模式失败！", err)
-	}
-	if justEditMP != nil {
-		justEditMP.EggSet = false
-		_, err := localClient.EditPrefs(ctx, justEditMP)
-		if err != nil {
-			logNotify("守护进程配置信息无法更新", err)
-		}
-	}
 
 	watchCtx, cancelWatch := context.WithCancel(ctx)
 	defer cancelWatch()
-	watcher, err := localClient.WatchIPNBus(watchCtx, 0)
+	watcher, err := LC.WatchIPNBus(watchCtx, 0)
 	if err != nil {
 		logNotify("守护进程监听管道建立失败", err)
 		return
@@ -85,10 +61,9 @@ func kickOffLogin(notifyCh chan Notify) {
 	pumpErr := make(chan error, 1)
 
 	var loginOnce sync.Once
-	startLoginInteractive := func() { loginOnce.Do(func() { localClient.StartLoginInteractive(ctx) }) }
+	startLoginInteractive := func() { loginOnce.Do(func() { LC.StartLoginInteractive(ctx) }) }
 
-	getURLNotify := make(chan Notify, 1)
-	go func(Ch chan Notify) {
+	go func() {
 		for {
 			n, err := watcher.Next()
 			if err != nil {
@@ -116,23 +91,22 @@ func kickOffLogin(notifyCh chan Notify) {
 			}
 			if url := n.BrowseToURL; url != nil {
 				//logNotify("请访问："+*url, errors.New("机器需访问URL"))
-				sendNotify := Notify{
-					NType: OpenURL,
-					NMsg:  *url,
-				}
-				Ch <- sendNotify
+				go func() { open.Run(*url) }()
+				fmt.Println("HHHH")
 			}
 		}
-	}(getURLNotify)
+	}()
 
-	if err := localClient.Start(ctx, ipn.Options{
+	if err := LC.CheckPrefs(ctx, prefs); err != nil {
+		logNotify("Pref出错", err)
+	}
+	if err := LC.Start(ctx, ipn.Options{
 		AuthKey:     "",
 		UpdatePrefs: prefs,
 	}); err != nil {
 		logNotify("无法开始", err)
 	}
 
-	var timeoutCh <-chan time.Time
 	select {
 	case <-running:
 		return
@@ -141,6 +115,7 @@ func kickOffLogin(notifyCh chan Notify) {
 		case <-running:
 			return
 		default:
+			fmt.Println("AAAA")
 		}
 		logNotify("watcher错误", watchCtx.Err())
 		return
@@ -149,15 +124,9 @@ func kickOffLogin(notifyCh chan Notify) {
 		case <-running:
 			return
 		default:
+			fmt.Println("BBBB")
 		}
 		logNotify("pump错误", err)
-		return
-	case <-timeoutCh:
-		logNotify("超时错误", errors.New("TimeOut!"))
-		return
-	case sender := <-getURLNotify:
-		notifyCh <- sender
-		fmt.Println("I got the URL, pls open it!")
 		return
 	}
 }

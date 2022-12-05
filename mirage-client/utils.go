@@ -36,7 +36,7 @@ func CreateDefaultPref() *ipn.Prefs {
 	prefs.WantRunning = true
 	prefs.RouteAll = true
 	prefs.ExitNodeAllowLANAccess = false
-	prefs.CorpDNS = true
+	prefs.CorpDNS = false
 	prefs.AllowSingleHosts = true
 	prefs.ShieldsUp = false
 	prefs.RunSSH = false
@@ -44,7 +44,7 @@ func CreateDefaultPref() *ipn.Prefs {
 	prefs.AdvertiseRoutes = routes
 	prefs.AdvertiseTags = tags
 	prefs.Hostname = ""
-	prefs.ForceDaemon = false
+	prefs.ForceDaemon = true
 	prefs.OperatorUser = ""
 	prefs.NetfilterMode = preftype.NetfilterOn
 
