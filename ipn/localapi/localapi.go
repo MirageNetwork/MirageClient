@@ -40,6 +40,7 @@ import (
 	"tailscale.com/tka"
 	"tailscale.com/types/key"
 	"tailscale.com/types/logger"
+	"tailscale.com/types/ptr"
 	"tailscale.com/util/clientmetric"
 	"tailscale.com/util/mak"
 	"tailscale.com/util/strs"
@@ -434,7 +435,16 @@ func (h *Handler) serveDebug(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return
 	}
-	action := r.FormValue("action")
+	// The action is normally in a POST form parameter, but
+	// some actions (like "notify") want a full JSON body, so
+	// permit some to have their action in a header.
+	var action string
+	switch v := r.Header.Get("Debug-Action"); v {
+	case "notify":
+		action = v
+	default:
+		action = r.FormValue("action")
+	}
 	var err error
 	switch action {
 	case "rebind":
@@ -455,6 +465,14 @@ func (h *Handler) serveDebug(w http.ResponseWriter, r *http.Request) {
 		// client already did. A future change will remove this, so don't depend
 		// on it.
 		h.b.RequestEngineStatus()
+	case "notify":
+		var n ipn.Notify
+		err = json.NewDecoder(r.Body).Decode(&n)
+		if err != nil {
+			break
+		}
+		h.b.DebugNotify(n)
+
 	case "":
 		err = fmt.Errorf("missing parameter 'action'")
 	default:
@@ -588,6 +606,32 @@ func (h *Handler) serveStatus(w http.ResponseWriter, r *http.Request) {
 	e := json.NewEncoder(w)
 	e.SetIndent("", "\t")
 	e.Encode(st)
+}
+
+// InUseOtherUserIPNStream reports whether r is a request for the watch-ipn-bus
+// handler. If so, it writes an ipn.Notify InUseOtherUser message to the user
+// and returns true. Otherwise it returns false, in which case it doesn't write
+// to w.
+//
+// Unlike the regular watch-ipn-bus handler, this one doesn't block. The caller
+// (in ipnserver.Server) provides the blocking until the connection is no longer
+// in use.
+func InUseOtherUserIPNStream(w http.ResponseWriter, r *http.Request, err error) (handled bool) {
+	if r.Method != "GET" || r.URL.Path != "/localapi/v0/watch-ipn-bus" {
+		return false
+	}
+	js, err := json.Marshal(&ipn.Notify{
+		Version:    version.Long,
+		State:      ptr.To(ipn.InUseOtherUser),
+		ErrMessage: ptr.To(err.Error()),
+	})
+	if err != nil {
+		return false
+	}
+	js = append(js, '\n')
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(js)
+	return true
 }
 
 func (h *Handler) serveWatchIPNBus(w http.ResponseWriter, r *http.Request) {
