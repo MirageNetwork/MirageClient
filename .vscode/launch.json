@@ -26,7 +26,8 @@
             "args": [
                 "up",
                 "--login-server",
-                "https://sdp.ipv4.uk"
+                "https://sdp.ipv4.uk",
+                "--unattended"
             ]
         },{
             "name": "ShowStatus",

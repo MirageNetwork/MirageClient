@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -12,7 +13,6 @@ import (
 	"tailscale.com/mirage-client/resource"
 
 	"github.com/getlantern/systray"
-	"github.com/skratchdot/open-golang/open"
 
 	"tailscale.com/client/tailscale"
 
@@ -21,14 +21,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var ctx context.Context
-var LC tailscale.LocalClient
+var ctx, ctxD context.Context
+
 var backVersion string
+
+var LC tailscale.LocalClient
 
 type NotifyType int
 
 const (
 	OpenURL NotifyType = iota
+	RestartDaemon
 )
 
 type Notify struct {
@@ -41,7 +44,7 @@ var notifyCh chan Notify
 func main() {
 
 	LC = tailscale.LocalClient{
-		Socket:        "",
+		Socket:        socket_path,
 		UseSocketOnly: false}
 	ctx = context.Background()
 	notifyCh = make(chan Notify, 1)
@@ -49,12 +52,12 @@ func main() {
 	onExit := func() {
 		doCleanUp()
 	}
-
+	ctxD = context.Background()
+	go StartDaemon(ctxD, false)
 	systray.Run(onReady, onExit)
 }
 
 func onReady() {
-	//	doInit()
 
 	systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
 	systray.SetTitle("蜃境")
@@ -74,8 +77,9 @@ func onReady() {
 		mQuit := systray.AddMenuItem("退出", "退出蜃境")
 
 		for {
+
 			st, err := LC.Status(ctx)
-			if err != nil {
+			if err != nil || st == nil {
 				log.Error().
 					Msg(`Get Status ERROR!`)
 
@@ -84,39 +88,39 @@ func onReady() {
 				backVersion = strings.Split(st.Version, "-")[0]
 			}
 			versionMenu.SetTitle(backVersion)
-
-			switch st.BackendState {
-			case "NeedsLogin":
-				userMenu.SetTitle("请先登录")
-				userMenu.Disable()
-				connectMenu.Hide()
-				disconnMenu.Hide()
-				loginMenu.Show()
-				nodeMenu.Hide()
-			case "Stopped":
-				loginMenu.Hide()
-				userMenu.Enable()
-				userMenu.SetTitle(st.User[st.Self.UserID].LoginName)
-				userMenu.Show()
-				connectMenu.Show()
-				disconnMenu.Hide()
-				nodeMenu.SetTitle("本设备")
-				nodeMenu.Disable()
-				nodeMenu.Show()
-			case "Running":
-				loginMenu.Hide()
-				userMenu.Enable()
-				userMenu.SetTitle(st.User[st.Self.UserID].LoginName)
-				userMenu.Show()
-				connectMenu.Hide()
-				disconnMenu.Show()
-				if len(st.Self.TailscaleIPs) > 0 {
-					nodeMenu.SetTitle("本设备：" + st.Self.HostName + " (" + st.Self.TailscaleIPs[0].String() + ")")
+			if st != nil {
+				switch st.BackendState {
+				case "NeedsLogin":
+					userMenu.SetTitle("请先登录")
+					userMenu.Disable()
+					connectMenu.Hide()
+					disconnMenu.Hide()
+					loginMenu.Show()
+					nodeMenu.Hide()
+				case "Stopped":
+					loginMenu.Hide()
+					userMenu.Enable()
+					userMenu.SetTitle(st.User[st.Self.UserID].LoginName)
+					userMenu.Show()
+					connectMenu.Show()
+					disconnMenu.Hide()
+					nodeMenu.SetTitle("本设备")
+					nodeMenu.Disable()
+					nodeMenu.Show()
+				case "Running":
+					loginMenu.Hide()
+					userMenu.Enable()
+					userMenu.SetTitle(st.User[st.Self.UserID].LoginName)
+					userMenu.Show()
+					connectMenu.Hide()
+					disconnMenu.Show()
+					if len(st.Self.TailscaleIPs) > 0 {
+						nodeMenu.SetTitle("本设备：" + st.Self.HostName + " (" + st.Self.TailscaleIPs[0].String() + ")")
+					}
+					nodeMenu.Enable()
+					nodeMenu.Show()
 				}
-				nodeMenu.Enable()
-				nodeMenu.Show()
 			}
-
 			select {
 			case <-mQuit.ClickedCh:
 				systray.Quit()
@@ -126,8 +130,7 @@ func onReady() {
 				fmt.Println("you clicked version")
 				continue
 			case <-loginMenu.ClickedCh:
-				kickOffLogin()
-				//open.Run(st.AuthURL)
+				kickOffLogin(notifyCh)
 				continue
 			case <-userLogoutMenu.ClickedCh:
 				doSavePref()
@@ -146,10 +149,12 @@ func onReady() {
 				}
 				continue
 			case msg := <-notifyCh:
-				if msg.NType == OpenURL {
-					open.Run(msg.NMsg)
-				} else {
-					beeep.Notify("蜃境", msg.NMsg, "Mirage_logo.png")
+				switch msg.NType {
+				case RestartDaemon:
+					ctxD.Done()
+					ctxD = context.Background()
+					go StartDaemon(ctxD, false)
+					logNotify("已连接", errors.New(""))
 				}
 				continue
 			}

@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 
@@ -21,7 +22,12 @@ import (
 var logo_png string = "./resource/Mirage_logo.png"
 var app_name string = "蜃境"
 var control_url string = "https://sdp.ipv4.uk"
-var localClient tailscale.LocalClient
+var socket_path string = `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
+var state_path string = filepath.Join(os.Getenv("ProgramData"), "Mirage", "server-state.conf")
+var pref_path string = filepath.Join(os.Getenv("ProgramData"), "Mirage", "pref.conf")
+var tun_name string = "Mirage"
+var log_id string = "Mirage"
+var engine_port uint16 = 41641
 
 var (
 	ipv4default = netip.MustParsePrefix("0.0.0.0/0")
@@ -106,11 +112,11 @@ func SavePref(lc tailscale.LocalClient, ctx context.Context) {
 		log.Error().Msg("Load Pref from current failed!")
 		return
 	}
-	ipn.SavePrefs("mirage.conf", ipnPref)
+	ipn.SavePrefs(pref_path, ipnPref)
 }
 
 func LoadPref(lc tailscale.LocalClient, ctx context.Context) {
-	ipnPref, err := ipn.LoadPrefs("mirage.conf")
+	ipnPref, err := ipn.LoadPrefs(pref_path)
 	if err != nil {
 		log.Error().Msg("Can't read Prefs from the conf file!")
 		return

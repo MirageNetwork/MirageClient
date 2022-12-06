@@ -88,7 +88,7 @@ func (lc *LocalClient) dialer() func(ctx context.Context, network, addr string) 
 }
 
 func (lc *LocalClient) defaultDialer(ctx context.Context, network, addr string) (net.Conn, error) {
-	if addr != "local-tailscaled.sock:80" {
+	if addr != "local-miraged.sock:80" {
 		return nil, fmt.Errorf("unexpected URL address %q", addr)
 	}
 	if !lc.UseSocketOnly {
@@ -130,7 +130,7 @@ func (lc *LocalClient) DoLocalRequest(req *http.Request) (*http.Response, error)
 func (lc *LocalClient) doLocalRequestNiceError(req *http.Request) (*http.Response, error) {
 	res, err := lc.DoLocalRequest(req)
 	if err == nil {
-		if server := res.Header.Get("Tailscale-Version"); server != "" && server != envknob.IPCVersion() && onVersionMismatch != nil {
+		if server := res.Header.Get("Mirage-Version"); server != "" && server != envknob.IPCVersion() && onVersionMismatch != nil {
 			onVersionMismatch(envknob.IPCVersion(), server)
 		}
 		if res.StatusCode == 403 {
@@ -866,7 +866,6 @@ func (lc *LocalClient) NetworkLockForceLocalDisable(ctx context.Context) error {
 	}
 	return nil
 }
-
 
 // SetServeConfig sets or replaces the serving settings.
 // If config is nil, settings are cleared and serving is disabled.
