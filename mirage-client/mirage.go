@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"strings"
 
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
@@ -22,8 +21,9 @@ import (
 )
 
 var ctx context.Context
-var LC tailscale.LocalClient
 var backVersion string
+
+var LC tailscale.LocalClient
 
 type NotifyType int
 
@@ -49,12 +49,13 @@ func main() {
 	onExit := func() {
 		doCleanUp()
 	}
+	ctxD := context.Background()
+	go StartDaemon(ctxD, false)
 
 	systray.Run(onReady, onExit)
 }
 
 func onReady() {
-	//	doInit()
 
 	systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
 	systray.SetTitle("蜃境")
@@ -74,12 +75,13 @@ func onReady() {
 		mQuit := systray.AddMenuItem("退出", "退出蜃境")
 
 		for {
+
 			st, err := LC.Status(ctx)
 			if err != nil {
 				log.Error().
 					Msg(`Get Status ERROR!`)
 
-			} else {
+			} /* else {
 				log.Info().Msg("Daemon: " + st.Version)
 				backVersion = strings.Split(st.Version, "-")[0]
 			}
@@ -116,7 +118,7 @@ func onReady() {
 				nodeMenu.Enable()
 				nodeMenu.Show()
 			}
-
+			*/
 			select {
 			case <-mQuit.ClickedCh:
 				systray.Quit()
