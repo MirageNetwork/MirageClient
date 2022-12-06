@@ -24,7 +24,9 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/tailscale",
             "args": [
-                "up"
+                "up",
+                "--login-server",
+                "https://sdp.ipv4.uk"
             ]
         },{
             "name": "ShowStatus",
