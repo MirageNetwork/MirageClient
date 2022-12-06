@@ -54,6 +54,19 @@ func main() {
 	}
 	ctxD = context.Background()
 	go StartDaemon(ctxD, false)
+	for {
+		st, err := LC.Status(ctx)
+		if err != nil {
+			log.Error().
+				Msg(`Get Status ERROR!`)
+
+		} else if st != nil && st.BackendState != "NoState" && st.BackendState != "Starting" {
+			if st.BackendState == "Stopped" && st.User[st.Self.UserID].LoginName == "" {
+				continue
+			}
+			break
+		}
+	}
 	systray.Run(onReady, onExit)
 }
 
@@ -165,9 +178,9 @@ func onReady() {
 
 func doInit() {
 	var ipnPref *ipn.Prefs
-	_, err := os.Stat(prefFileName)
+	_, err := os.Stat(pref_path)
 	if err == nil {
-		ipnPref, err = ipn.LoadPrefs(prefFileName)
+		ipnPref, err = ipn.LoadPrefs(pref_path)
 		if err != nil {
 			log.Error().Msg("Can't read Prefs from the conf file!")
 			return
@@ -192,7 +205,7 @@ func doSavePref() {
 		log.Error().Msg("Load Pref from current failed!")
 		return
 	}
-	ipn.SavePrefs(prefFileName, ipnPref)
+	ipn.SavePrefs(pref_path, ipnPref)
 }
 
 func doConn() {
