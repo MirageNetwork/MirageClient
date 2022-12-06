@@ -35,7 +35,7 @@ func updatePrefs(st *ipnstate.Status, prefs, curPrefs *ipn.Prefs) (simpleUp bool
 	return simpleUp, justEditMP, nil
 }
 
-func kickOffLogin() {
+func kickOffLogin(notifyCh chan Notify) {
 	prefs := CreateDefaultPref()
 
 	watchCtx, cancelWatch := context.WithCancel(ctx)
@@ -109,7 +109,12 @@ func kickOffLogin() {
 
 	select {
 	case <-running:
-		return
+		sendNotify := Notify{
+			NType: RestartDaemon,
+			NMsg:  "状态已运行",
+		}
+		notifyCh <- sendNotify
+		//return
 	case <-watchCtx.Done():
 		select {
 		case <-running:

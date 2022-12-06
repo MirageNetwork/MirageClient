@@ -370,7 +370,7 @@ func (s *Server) start() (reterr error) {
 	// Create an in-process listener.
 	// nettest.Listen provides a in-memory pipe based implementation for net.Conn.
 	// TODO(maisem): Rename nettest package to remove "test".
-	lal := nettest.Listen("local-tailscaled.sock:80")
+	lal := nettest.Listen("local-miraged.sock:80")
 	s.localAPIListener = lal
 	s.localClient = &tailscale.LocalClient{Dial: lal.Dial}
 	go func() {
