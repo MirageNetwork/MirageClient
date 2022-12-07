@@ -110,11 +110,11 @@ func kickOffLogin(notifyCh chan Notify) {
 	select {
 	case <-running:
 		sendNotify := Notify{
-			NType: RestartDaemon,
+			NType: IntoRunning,
 			NMsg:  "状态已运行",
 		}
 		notifyCh <- sendNotify
-		//return
+		return
 	case <-watchCtx.Done():
 		select {
 		case <-running:

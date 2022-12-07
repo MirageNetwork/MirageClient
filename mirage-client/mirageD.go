@@ -58,7 +58,10 @@ type serverOptions struct {
 	LoginFlags controlclient.LoginFlags
 }
 
-func StartDaemon(ctx context.Context, cleanup bool) {
+func StartDaemon(ctx context.Context, cleanup bool, stopSignalCh chan bool) {
+	mu.Lock()
+	defer mu.Unlock()
+
 	envknob.PanicIfAnyEnvCheckedInInit()
 	envknob.ApplyDiskConfig()
 	envknob.SetNoLogsNoSupport()
@@ -82,40 +85,37 @@ func StartDaemon(ctx context.Context, cleanup bool) {
 
 	ln, _, err := safesocket.Listen(socket_path, safesocket.WindowsLocalPort)
 	if err != nil {
-		logNotify("[守护进程]\n监听创建失败", errors.New("[守护进程]\n监听创建失败"))
+		logNotify("[守护进程]\n监听创建失败", err)
 		return
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	defer func(backCh chan bool) {
+		cancel()
+		fmt.Println("Daemon Stopped Now")
+		backCh <- true
+	}(stopSignalCh)
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM)
 	signal.Ignore(syscall.SIGPIPE)
-	go func() {
+	go func(guiStop chan bool) {
 		select {
 		case s := <-interrupt:
 			logf("tailscaled got signal %v; shutting down", s)
 			cancel()
 		case <-ctx.Done():
+		case <-guiStop:
+			logf("GUI told daemon to stop")
+			cancel()
 		}
-	}()
+	}(stopSignalCh)
 
 	srv := ipnserver.New(logf, log_id)
 	var lbErr syncs.AtomicValue[error]
 
 	go func() {
 		t0 := time.Now()
-		if s, ok := envknob.LookupInt("TS_DEBUG_BACKEND_DELAY_SEC"); ok {
-			d := time.Duration(s) * time.Second
-			logf("sleeping %v before starting backend...", d)
-			select {
-			case <-time.After(d):
-				logf("slept %v; starting backend...", d)
-			case <-ctx.Done():
-				return
-			}
-		}
 		lb, err := getLocalBackend(ctx, logf, log_id)
 		if err == nil {
 			logf("got LocalBackend in %v", time.Since(t0).Round(time.Millisecond))

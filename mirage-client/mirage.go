@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
@@ -32,6 +33,7 @@ type NotifyType int
 const (
 	OpenURL NotifyType = iota
 	RestartDaemon
+	IntoRunning
 )
 
 type Notify struct {
@@ -39,7 +41,9 @@ type Notify struct {
 	NMsg  string
 }
 
+var mu sync.Mutex
 var notifyCh chan Notify
+var stopDaemonCh chan bool
 
 func main() {
 
@@ -48,25 +52,12 @@ func main() {
 		UseSocketOnly: false}
 	ctx = context.Background()
 	notifyCh = make(chan Notify, 1)
+	stopDaemonCh = make(chan bool, 1)
 
 	onExit := func() {
 		doCleanUp()
 	}
-	ctxD = context.Background()
-	go StartDaemon(ctxD, false)
-	for {
-		st, err := LC.Status(ctx)
-		if err != nil {
-			log.Error().
-				Msg(`Get Status ERROR!`)
 
-		} else if st != nil && st.BackendState != "NoState" && st.BackendState != "Starting" {
-			if st.BackendState == "Stopped" && st.User[st.Self.UserID].LoginName == "" {
-				continue
-			}
-			break
-		}
-	}
 	systray.Run(onReady, onExit)
 }
 
@@ -75,8 +66,22 @@ func onReady() {
 	systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
 	systray.SetTitle("蜃境")
 	systray.SetTooltip("简单安全的组网工具")
-
 	go func() {
+		ctxD = context.Background()
+		go StartDaemon(ctxD, false, stopDaemonCh)
+		for {
+			st, err := LC.Status(ctx)
+			if err != nil {
+				log.Error().
+					Msg(`Get Status ERROR!`)
+
+			} else if st != nil && st.BackendState != "NoState" && st.BackendState != "Starting" {
+				if st.BackendState == "Stopped" && st.User[st.Self.UserID].LoginName == "" {
+					continue
+				}
+				break
+			}
+		}
 
 		loginMenu := systray.AddMenuItem("登录…", "点击进行登录")
 		connectMenu := systray.AddMenuItem("连接", "点击接入蜃境")
@@ -88,7 +93,7 @@ func onReady() {
 		systray.AddSeparator()
 		versionMenu := systray.AddMenuItem(backVersion, "点击查看详细信息")
 		mQuit := systray.AddMenuItem("退出", "退出蜃境")
-
+		justLogin := false
 		for {
 
 			st, err := LC.Status(ctx)
@@ -101,7 +106,7 @@ func onReady() {
 				backVersion = strings.Split(st.Version, "-")[0]
 			}
 			versionMenu.SetTitle(backVersion)
-			if st != nil {
+			if st != nil && !justLogin {
 				switch st.BackendState {
 				case "NeedsLogin":
 					userMenu.SetTitle("请先登录")
@@ -144,6 +149,7 @@ func onReady() {
 				continue
 			case <-loginMenu.ClickedCh:
 				kickOffLogin(notifyCh)
+				justLogin = true
 				continue
 			case <-userLogoutMenu.ClickedCh:
 				doSavePref()
@@ -163,17 +169,37 @@ func onReady() {
 				continue
 			case msg := <-notifyCh:
 				switch msg.NType {
-				case RestartDaemon:
-					ctxD.Done()
-					ctxD = context.Background()
-					go StartDaemon(ctxD, false)
+				case IntoRunning:
+					st, err := LC.Status(ctx)
+					if err != nil {
+						log.Error().
+							Msg(`Get Status ERROR!`)
+						justLogin = false
+						continue
+					} else if len(st.Self.TailscaleIPs) < 1 {
+						stopDaemonCh <- true
+						fmt.Println("首次接入同步状态，请稍后…")
+						<-stopDaemonCh
+						newctxD := context.Background()
+						fmt.Println("开始重启Daemon")
+						go StartDaemon(newctxD, false, stopDaemonCh)
+						for {
+							st, err := LC.Status(ctx)
+							if err != nil {
+								log.Error().
+									Msg(`Get Status ERROR!`)
+							} else if st != nil && st.BackendState == "Running" {
+								break
+							}
+						}
+					}
+					justLogin = false
 					logNotify("已连接", errors.New(""))
 				}
 				continue
 			}
 		}
 	}()
-
 }
 
 func doInit() {

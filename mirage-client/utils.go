@@ -137,19 +137,19 @@ func logNotify(msg string, err error) {
 
 func StartWatcher(ctx context.Context, localClient tailscale.LocalClient, isRunning chan bool, notLogin chan bool, notAuth chan bool, errHappen chan error, doLogin chan bool, stopWatch chan bool) {
 	watchCtx, cancelWatch := context.WithCancel(ctx)
-	// defer func() {
-	// 	fmt.Println("utils-log-135")
-	// 	cancelWatch()
-	// }()
+	defer func() {
+		fmt.Println("utils-log-135")
+		cancelWatch()
+	}()
 	watcher, err := localClient.WatchIPNBus(watchCtx, 0)
 	if err != nil {
 		logNotify("守护进程通讯无法建立", err)
 		return
 	}
-	// defer func() {
-	// 	fmt.Println("utils-log-144")
-	// 	watcher.Close()
-	// }()
+	defer func() {
+		fmt.Println("utils-log-144")
+		watcher.Close()
+	}()
 
 	go func() {
 		interrupt := make(chan os.Signal, 1)
@@ -188,7 +188,7 @@ func StartWatcher(ctx context.Context, localClient tailscale.LocalClient, isRunn
 					case isRunning <- true:
 					default:
 					}
-					//cancelWatch()
+					cancelWatch()
 				}
 			}
 			st, _ := localClient.Status(ctx)
