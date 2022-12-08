@@ -90,11 +90,10 @@ func StartDaemon(ctx context.Context, cleanup bool, stopSignalCh chan bool) {
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	defer func(backCh chan bool) {
+	defer func() {
 		cancel()
-		fmt.Println("Daemon Stopped Now")
-		backCh <- true
-	}(stopSignalCh)
+		stopSignalCh <- false
+	}()
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -105,8 +104,8 @@ func StartDaemon(ctx context.Context, cleanup bool, stopSignalCh chan bool) {
 			logf("tailscaled got signal %v; shutting down", s)
 			cancel()
 		case <-ctx.Done():
-		case <-guiStop:
-			logf("GUI told daemon to stop")
+		case v := <-guiStop:
+			logf("GUI told daemon to stop %v", v)
 			cancel()
 		}
 	}(stopSignalCh)

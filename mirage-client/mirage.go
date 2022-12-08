@@ -52,7 +52,7 @@ func main() {
 		UseSocketOnly: false}
 	ctx = context.Background()
 	notifyCh = make(chan Notify, 1)
-	stopDaemonCh = make(chan bool, 1)
+	stopDaemonCh = make(chan bool)
 
 	onExit := func() {
 		doCleanUp()
@@ -179,7 +179,16 @@ func onReady() {
 					} else if len(st.Self.TailscaleIPs) < 1 {
 						stopDaemonCh <- true
 						fmt.Println("首次接入同步状态，请稍后…")
-						<-stopDaemonCh
+						select {
+						case v := <-stopDaemonCh:
+							fmt.Println(v)
+						}
+
+						socket_path = socket_path + "_"
+						LC = tailscale.LocalClient{
+							Socket:        socket_path,
+							UseSocketOnly: false}
+
 						newctxD := context.Background()
 						fmt.Println("开始重启Daemon")
 						go StartDaemon(newctxD, false, stopDaemonCh)
