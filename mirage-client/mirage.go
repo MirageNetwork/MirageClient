@@ -18,7 +18,6 @@ import (
 	"tailscale.com/client/tailscale"
 
 	"github.com/atotto/clipboard"
-	"github.com/gen2brain/beeep"
 	"github.com/rs/zerolog/log"
 )
 
@@ -55,7 +54,6 @@ func main() {
 	stopDaemonCh = make(chan bool)
 
 	onExit := func() {
-		doCleanUp()
 	}
 
 	systray.Run(onReady, onExit)
@@ -79,6 +77,14 @@ func onReady() {
 				if st.BackendState == "Stopped" && st.User[st.Self.UserID].LoginName == "" {
 					continue
 				}
+				if st.BackendState != "NeedsLogin" {
+					for {
+						st, err = LC.Status(ctx)
+						if err == nil && (st.BackendState == "Stopped" && st.User[st.Self.UserID].LoginName != "" || st.BackendState == "Running") {
+							break
+						}
+					}
+				}
 				break
 			}
 		}
@@ -95,7 +101,6 @@ func onReady() {
 		mQuit := systray.AddMenuItem("退出", "退出蜃境")
 		justLogin := false
 		for {
-
 			st, err := LC.Status(ctx)
 			if err != nil || st == nil {
 				log.Error().
@@ -147,12 +152,12 @@ func onReady() {
 			case <-versionMenu.ClickedCh:
 				fmt.Println("you clicked version")
 				continue
+
 			case <-loginMenu.ClickedCh:
 				kickOffLogin(notifyCh)
 				justLogin = true
 				continue
 			case <-userLogoutMenu.ClickedCh:
-				doSavePref()
 				LC.Logout(ctx)
 				continue
 			case <-connectMenu.ClickedCh:
@@ -164,7 +169,7 @@ func onReady() {
 			case <-nodeMenu.ClickedCh:
 				if len(st.Self.TailscaleIPs) > 0 {
 					clipboard.WriteAll(st.Self.TailscaleIPs[0].String())
-					beeep.Notify("蜃境", "您的本设备IP已复制", "Mirage_logo.png")
+					logNotify("您的本设备IP已复制", errors.New(""))
 				}
 				continue
 			case msg := <-notifyCh:
@@ -209,38 +214,6 @@ func onReady() {
 			}
 		}
 	}()
-}
-
-func doInit() {
-	var ipnPref *ipn.Prefs
-	_, err := os.Stat(pref_path)
-	if err == nil {
-		ipnPref, err = ipn.LoadPrefs(pref_path)
-		if err != nil {
-			log.Error().Msg("Can't read Prefs from the conf file!")
-			return
-		}
-	} else {
-		ipnPref = CreateDefaultPref()
-	}
-	LC.Start(ctx, ipn.Options{
-		AuthKey:     "",
-		UpdatePrefs: ipnPref,
-	})
-}
-
-func doCleanUp() {
-	doSavePref()
-	doDisconn()
-}
-
-func doSavePref() {
-	ipnPref, err := LC.GetPrefs(ctx)
-	if err != nil {
-		log.Error().Msg("Load Pref from current failed!")
-		return
-	}
-	ipn.SavePrefs(pref_path, ipnPref)
 }
 
 func doConn() {

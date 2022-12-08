@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -200,4 +201,36 @@ func StartWatcher(ctx context.Context, localClient tailscale.LocalClient, isRunn
 		}
 	}()
 
+}
+
+// //
+var watchIPNArgs struct {
+	netmap  bool
+	initial bool
+}
+
+func gotPersist() {
+	var mask ipn.NotifyWatchOpt
+	if watchIPNArgs.initial {
+		mask = ipn.NotifyInitialState | ipn.NotifyInitialPrefs | ipn.NotifyInitialNetMap
+	}
+	watcher, err := LC.WatchIPNBus(ctx, mask)
+	if err != nil {
+		logNotify("测试监听失败", err)
+		return
+	}
+	defer watcher.Close()
+	fmt.Println("Connected.")
+	for {
+		n, err := watcher.Next()
+		if err != nil {
+			logNotify("读取监听失败", err)
+			return
+		}
+		if !watchIPNArgs.netmap {
+			n.NetMap = nil
+		}
+		j, _ := json.MarshalIndent(n, "", "\t")
+		fmt.Printf("%s\n", j)
+	}
 }
