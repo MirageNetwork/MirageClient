@@ -31,9 +31,11 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
-	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/ipn"
 	"tailscale.com/tailcfg"
 	"tailscale.com/tstest"
+	"tailscale.com/types/netmap"
+	"tailscale.com/types/ptr"
 )
 
 func TestContainerBoot(t *testing.T) {
@@ -91,18 +93,13 @@ func TestContainerBoot(t *testing.T) {
 	}
 
 	argFile := filepath.Join(d, "args")
-	tsIPs := []netip.Addr{netip.MustParseAddr("100.64.0.1")}
 	runningSockPath := filepath.Join(d, "tmp/tailscaled.sock")
 
-	// TODO: refactor this 1-2 stuff if we ever need a third
-	// step. Right now all of containerboot's modes either converge
-	// with no further interaction needed, or with one extra step
-	// only.
 	type phase struct {
-		// Make LocalAPI report this status, then wait for the Wants below to be
-		// satisfied. A zero Status is a valid state for a just-started
-		// tailscaled.
-		Status ipnstate.Status
+		// If non-nil, send this IPN bus notification (and remember it as the
+		// initial update for any future new watchers, then wait for all the
+		// Waits below to be true before proceeding to the next phase.
+		Notify *ipn.Notify
 
 		// WantCmds is the commands that containerboot should run in this phase.
 		WantCmds []string
@@ -113,11 +110,22 @@ func TestContainerBoot(t *testing.T) {
 		// contents.
 		WantFiles map[string]string
 	}
+	runningNotify := &ipn.Notify{
+		State: ptr.To(ipn.Running),
+		NetMap: &netmap.NetworkMap{
+			SelfNode: &tailcfg.Node{
+				StableID: tailcfg.StableNodeID("myID"),
+				Name:     "test-node.test.ts.net",
+			},
+			Addresses: []netip.Prefix{netip.MustParsePrefix("100.64.0.1/32")},
+		},
+	}
 	tests := []struct {
-		Name       string
-		Env        map[string]string
-		KubeSecret map[string]string
-		Phases     []phase
+		Name          string
+		Env           map[string]string
+		KubeSecret    map[string]string
+		KubeDenyPatch bool
+		Phases        []phase
 	}{
 		{
 			// Out of the box default: runs in userspace mode, ephemeral storage, interactive login.
@@ -131,10 +139,7 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 				},
 			},
 		},
@@ -152,10 +157,7 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 				},
 			},
 		},
@@ -173,10 +175,7 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 				},
 			},
 		},
@@ -194,10 +193,7 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 					WantFiles: map[string]string{
 						"proc/sys/net/ipv4/ip_forward":          "0",
 						"proc/sys/net/ipv6/conf/all/forwarding": "0",
@@ -220,10 +216,7 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 					WantFiles: map[string]string{
 						"proc/sys/net/ipv4/ip_forward":          "1",
 						"proc/sys/net/ipv6/conf/all/forwarding": "0",
@@ -246,10 +239,7 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 					WantFiles: map[string]string{
 						"proc/sys/net/ipv4/ip_forward":          "0",
 						"proc/sys/net/ipv6/conf/all/forwarding": "1",
@@ -272,10 +262,7 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 					WantFiles: map[string]string{
 						"proc/sys/net/ipv4/ip_forward":          "1",
 						"proc/sys/net/ipv6/conf/all/forwarding": "1",
@@ -298,10 +285,7 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 					WantCmds: []string{
 						"/usr/bin/iptables -t nat -I PREROUTING 1 -d 100.64.0.1 -j DNAT --to-destination 1.2.3.4",
 					},
@@ -321,18 +305,15 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "NeedsLogin",
+					Notify: &ipn.Notify{
+						State: ptr.To(ipn.NeedsLogin),
 					},
 					WantCmds: []string{
 						"/usr/bin/tailscale --socket=/tmp/tailscaled.sock up --accept-dns=false --authkey=tskey-key",
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 				},
 			},
 		},
@@ -356,17 +337,35 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-						Self: &ipnstate.PeerStatus{
-							ID: tailcfg.StableNodeID("myID"),
-						},
-					},
+					Notify: runningNotify,
 					WantKubeSecret: map[string]string{
-						"authkey":   "tskey-key",
-						"device_id": "myID",
+						"authkey":     "tskey-key",
+						"device_fqdn": "test-node.test.ts.net",
+						"device_id":   "myID",
 					},
+				},
+			},
+		},
+		{
+			Name: "kube_storage_no_patch",
+			Env: map[string]string{
+				"KUBERNETES_SERVICE_HOST":       kube.Host,
+				"KUBERNETES_SERVICE_PORT_HTTPS": kube.Port,
+				"TS_AUTH_KEY":                   "tskey-key",
+			},
+			KubeSecret:    map[string]string{},
+			KubeDenyPatch: true,
+			Phases: []phase{
+				{
+					WantCmds: []string{
+						"/usr/bin/tailscaled --socket=/tmp/tailscaled.sock --state=kube:tailscale --statedir=/tmp --tun=userspace-networking",
+						"/usr/bin/tailscale --socket=/tmp/tailscaled.sock up --accept-dns=false --authkey=tskey-key",
+					},
+					WantKubeSecret: map[string]string{},
+				},
+				{
+					Notify:         runningNotify,
+					WantKubeSecret: map[string]string{},
 				},
 			},
 		},
@@ -391,8 +390,8 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "NeedsLogin",
+					Notify: &ipn.Notify{
+						State: ptr.To(ipn.NeedsLogin),
 					},
 					WantCmds: []string{
 						"/usr/bin/tailscale --socket=/tmp/tailscaled.sock up --accept-dns=false --authkey=tskey-key",
@@ -402,15 +401,56 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-						Self: &ipnstate.PeerStatus{
-							ID: tailcfg.StableNodeID("myID"),
+					Notify: runningNotify,
+					WantKubeSecret: map[string]string{
+						"device_fqdn": "test-node.test.ts.net",
+						"device_id":   "myID",
+					},
+				},
+			},
+		},
+		{
+			Name: "kube_storage_updates",
+			Env: map[string]string{
+				"KUBERNETES_SERVICE_HOST":       kube.Host,
+				"KUBERNETES_SERVICE_PORT_HTTPS": kube.Port,
+			},
+			KubeSecret: map[string]string{
+				"authkey": "tskey-key",
+			},
+			Phases: []phase{
+				{
+					WantCmds: []string{
+						"/usr/bin/tailscaled --socket=/tmp/tailscaled.sock --state=kube:tailscale --statedir=/tmp --tun=userspace-networking",
+						"/usr/bin/tailscale --socket=/tmp/tailscaled.sock up --accept-dns=false --authkey=tskey-key",
+					},
+					WantKubeSecret: map[string]string{
+						"authkey": "tskey-key",
+					},
+				},
+				{
+					Notify: runningNotify,
+					WantKubeSecret: map[string]string{
+						"authkey":     "tskey-key",
+						"device_fqdn": "test-node.test.ts.net",
+						"device_id":   "myID",
+					},
+				},
+				{
+					Notify: &ipn.Notify{
+						State: ptr.To(ipn.Running),
+						NetMap: &netmap.NetworkMap{
+							SelfNode: &tailcfg.Node{
+								StableID: tailcfg.StableNodeID("newID"),
+								Name:     "new-name.test.ts.net",
+							},
+							Addresses: []netip.Prefix{netip.MustParsePrefix("100.64.0.1/32")},
 						},
 					},
 					WantKubeSecret: map[string]string{
-						"device_id": "myID",
+						"authkey":     "tskey-key",
+						"device_fqdn": "new-name.test.ts.net",
+						"device_id":   "newID",
 					},
 				},
 			},
@@ -429,13 +469,7 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					// The tailscale up call blocks until auth is complete, so
-					// by the time it returns the next converged state is
-					// Running.
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 				},
 			},
 		},
@@ -452,10 +486,7 @@ func TestContainerBoot(t *testing.T) {
 					},
 				},
 				{
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 				},
 			},
 		},
@@ -472,10 +503,7 @@ func TestContainerBoot(t *testing.T) {
 						"/usr/bin/tailscale --socket=/tmp/tailscaled.sock up --accept-dns=false --widget=rotated",
 					},
 				}, {
-					Status: ipnstate.Status{
-						BackendState: "Running",
-						TailscaleIPs: tsIPs,
-					},
+					Notify: runningNotify,
 				},
 			},
 		},
@@ -492,6 +520,7 @@ func TestContainerBoot(t *testing.T) {
 			for k, v := range test.KubeSecret {
 				kube.SetSecret(k, v)
 			}
+			kube.SetPatching(!test.KubeDenyPatch)
 
 			cmd := exec.Command(boot)
 			cmd.Env = []string{
@@ -521,7 +550,7 @@ func TestContainerBoot(t *testing.T) {
 
 			var wantCmds []string
 			for _, p := range test.Phases {
-				lapi.SetStatus(p.Status)
+				lapi.Notify(p.Notify)
 				wantCmds = append(wantCmds, p.WantCmds...)
 				waitArgs(t, 2*time.Second, d, argFile, strings.Join(wantCmds, "\n"))
 				err := tstest.WaitFor(2*time.Second, func() error {
@@ -657,7 +686,8 @@ type localAPI struct {
 	srv *http.Server
 
 	sync.Mutex
-	status ipnstate.Status
+	cond   *sync.Cond
+	notify *ipn.Notify
 }
 
 func (l *localAPI) Start() error {
@@ -675,6 +705,7 @@ func (l *localAPI) Start() error {
 		Handler: l,
 	}
 	l.Path = path
+	l.cond = sync.NewCond(&l.Mutex)
 	go l.srv.Serve(ln)
 	return nil
 }
@@ -684,29 +715,49 @@ func (l *localAPI) Close() {
 }
 
 func (l *localAPI) Reset() {
-	l.SetStatus(ipnstate.Status{
-		BackendState: "NoState",
-	})
-}
-
-func (l *localAPI) SetStatus(st ipnstate.Status) {
 	l.Lock()
 	defer l.Unlock()
-	l.status = st
+	l.notify = nil
+	l.cond.Broadcast()
+}
+
+func (l *localAPI) Notify(n *ipn.Notify) {
+	if n == nil {
+		return
+	}
+	l.Lock()
+	defer l.Unlock()
+	l.notify = n
+	l.cond.Broadcast()
 }
 
 func (l *localAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		panic(fmt.Sprintf("unsupported method %q", r.Method))
 	}
-	if r.URL.Path != "/localapi/v0/status" {
-		panic(fmt.Sprintf("unsupported localAPI path %q", r.URL.Path))
+	if r.URL.Path != "/localapi/v0/watch-ipn-bus" {
+		panic(fmt.Sprintf("unsupported path %q", r.URL.Path))
 	}
+
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	enc := json.NewEncoder(w)
 	l.Lock()
 	defer l.Unlock()
-	if err := json.NewEncoder(w).Encode(l.status); err != nil {
-		panic("json encode failed")
+	for {
+		if l.notify != nil {
+			if err := enc.Encode(l.notify); err != nil {
+				// Usually broken pipe as the test client disconnects.
+				return
+			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+		l.cond.Wait()
 	}
 }
 
@@ -722,7 +773,8 @@ type kubeServer struct {
 	srv *httptest.Server
 
 	sync.Mutex
-	secret map[string]string
+	secret   map[string]string
+	canPatch bool
 }
 
 func (k *kubeServer) Secret() map[string]string {
@@ -739,6 +791,12 @@ func (k *kubeServer) SetSecret(key, val string) {
 	k.Lock()
 	defer k.Unlock()
 	k.secret[key] = val
+}
+
+func (k *kubeServer) SetPatching(canPatch bool) {
+	k.Lock()
+	defer k.Unlock()
+	k.canPatch = canPatch
 }
 
 func (k *kubeServer) Reset() {
@@ -784,16 +842,39 @@ func (k *kubeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Authorization") != "Bearer bearer_token" {
 		panic("client didn't provide bearer token in request")
 	}
-	if r.URL.Path == "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews" {
-		// Just say yes to all SARs, we don't enforce RBAC.
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"status":{"allowed":true}}`)
-		return
-	}
-	if r.URL.Path != "/api/v1/namespaces/default/secrets/tailscale" {
+	switch r.URL.Path {
+	case "/api/v1/namespaces/default/secrets/tailscale":
+		k.serveSecret(w, r)
+	case "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews":
+		k.serveSSAR(w, r)
+	default:
 		panic(fmt.Sprintf("unhandled fake kube api path %q", r.URL.Path))
 	}
+}
 
+func (k *kubeServer) serveSSAR(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Spec struct {
+			ResourceAttributes struct {
+				Verb string `json:"verb"`
+			} `json:"resourceAttributes"`
+		} `json:"spec"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		panic(fmt.Sprintf("decoding SSAR request: %v", err))
+	}
+	ok := true
+	if req.Spec.ResourceAttributes.Verb == "patch" {
+		k.Lock()
+		defer k.Unlock()
+		ok = k.canPatch
+	}
+	// Just say yes to all SARs, we don't enforce RBAC.
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"status":{"allowed":%v}}`, ok)
+}
+
+func (k *kubeServer) serveSecret(w http.ResponseWriter, r *http.Request) {
 	bs, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("reading request body: %v", err), http.StatusInternalServerError)
@@ -819,6 +900,11 @@ func (k *kubeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			panic("encode failed")
 		}
 	case "PATCH":
+		k.Lock()
+		defer k.Unlock()
+		if !k.canPatch {
+			panic("containerboot tried to patch despite not being allowed")
+		}
 		switch r.Header.Get("Content-Type") {
 		case "application/json-patch+json":
 			req := []struct {
@@ -828,8 +914,6 @@ func (k *kubeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err := json.Unmarshal(bs, &req); err != nil {
 				panic(fmt.Sprintf("json decode failed: %v. Body:\n\n%s", err, string(bs)))
 			}
-			k.Lock()
-			defer k.Unlock()
 			for _, op := range req {
 				if op.Op != "remove" {
 					panic(fmt.Sprintf("unsupported json-patch op %q", op.Op))
@@ -846,8 +930,6 @@ func (k *kubeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err := json.Unmarshal(bs, &req); err != nil {
 				panic(fmt.Sprintf("json decode failed: %v. Body:\n\n%s", err, string(bs)))
 			}
-			k.Lock()
-			defer k.Unlock()
 			for key, val := range req.Data {
 				k.secret[key] = val
 			}
