@@ -27,7 +27,9 @@
                 "up",
                 "--login-server",
                 "https://sdp.ipv4.uk",
-                "--unattended"
+                "--unattended",
+ //               "--socket",
+//                 "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged"
             ]
         },{
             "name": "ShowStatus",
@@ -36,7 +38,20 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/tailscale",
             "args": [
-                "status"
+                "status",
+                                "--socket",
+                 "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged"
+            ]
+        },{
+            "name": "Logout",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/tailscale",
+            "args": [
+                "logout",
+   //             "--socket",
+ //               "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged"
             ]
         }
     ]
