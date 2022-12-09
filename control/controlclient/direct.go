@@ -292,6 +292,8 @@ func (c *Direct) SetHostinfo(hi *tailcfg.Hostinfo) bool {
 	if hi.Equal(c.hostinfo) {
 		return false
 	}
+	mk, _ := c.getMachinePrivKey()
+	hi.BackendLogID = mk.Public().String()
 	c.hostinfo = hi.Clone()
 	j, _ := json.Marshal(c.hostinfo)
 	c.logf("[v1] HostInfo: %s", j)
