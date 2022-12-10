@@ -17,9 +17,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/tailscale/wireguard-go/device"
+	"github.com/tailscale/wireguard-go/tun"
 	"go4.org/mem"
-	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/tun"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"tailscale.com/disco"
 	"tailscale.com/net/connstats"
@@ -559,9 +559,9 @@ func (t *Wrapper) Read(buffs [][]byte, sizes []int, offset int) (int, error) {
 	metricPacketOut.Add(int64(len(res.data)))
 
 	var buffsPos int
+	p := parsedPacketPool.Get().(*packet.Parsed)
+	defer parsedPacketPool.Put(p)
 	for _, data := range res.data {
-		p := parsedPacketPool.Get().(*packet.Parsed)
-		defer parsedPacketPool.Put(p)
 		p.Decode(data[res.dataOffset:])
 		if m := t.destIPActivity.Load(); m != nil {
 			if fn := m[p.Dst.Addr()]; fn != nil {
@@ -629,11 +629,7 @@ func (t *Wrapper) injectedRead(res tunInjectedRead, buf []byte, offset int) (int
 	return n, nil
 }
 
-func (t *Wrapper) filterIn(buf []byte) filter.Response {
-	p := parsedPacketPool.Get().(*packet.Parsed)
-	defer parsedPacketPool.Put(p)
-	p.Decode(buf)
-
+func (t *Wrapper) filterIn(p *packet.Parsed) filter.Response {
 	if p.IPProto == ipproto.TSMP {
 		if pingReq, ok := p.AsTSMPPing(); ok {
 			t.noteActivity()
@@ -732,8 +728,11 @@ func (t *Wrapper) Write(buffs [][]byte, offset int) (int, error) {
 	metricPacketIn.Add(int64(len(buffs)))
 	i := 0
 	if !t.disableFilter {
+		p := parsedPacketPool.Get().(*packet.Parsed)
+		defer parsedPacketPool.Put(p)
 		for _, buff := range buffs {
-			if t.filterIn(buff[offset:]) != filter.Accept {
+			p.Decode(buff[offset:])
+			if t.filterIn(p) != filter.Accept {
 				metricPacketInDrop.Add(1)
 			} else {
 				buffs[i] = buff
