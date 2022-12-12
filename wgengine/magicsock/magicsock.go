@@ -2486,9 +2486,10 @@ func (c *Conn) SetNetworkMap(nm *netmap.NetworkMap) {
 		return
 	}
 
-	if c.netMap != nil && nodesEqual(c.netMap.Peers, nm.Peers) {
-		return
-	}
+	//cgao6 temp fix for relogin as another user
+	//	if c.netMap != nil && nodesEqual(c.netMap.Peers, nm.Peers) {
+	//		return
+	//	}
 
 	metricNumPeers.Set(int64(len(nm.Peers)))
 
