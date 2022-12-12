@@ -10,7 +10,11 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/cmd/tailscaled"
+            "program": "${workspaceFolder}/cmd/tailscaled",
+            "args": [
+                "--socket",
+                 "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged"
+            ]
         },{
             "name": "client-GUI",
             "type": "go",
@@ -24,12 +28,12 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/tailscale",
             "args": [
+                "--socket",
+                "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged",
                 "up",
                 "--login-server",
                 "https://sdp.ipv4.uk",
-                "--unattended",
- //               "--socket",
-//                 "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged"
+                "--unattended"
             ]
         },{
             "name": "ShowStatus",
@@ -38,9 +42,10 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/tailscale",
             "args": [
-                "status",
-                                "--socket",
-                 "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged"
+                                 "--socket",
+                  "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged",
+                  
+                "status"
             ]
         },{
             "name": "Logout",
@@ -49,9 +54,10 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/tailscale",
             "args": [
+                                "--socket",
+                "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged",
                 "logout",
-   //             "--socket",
- //               "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged"
+
             ]
         }
     ]

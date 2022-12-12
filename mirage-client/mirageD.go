@@ -15,8 +15,8 @@ import (
 
 	"github.com/dblohm7/wingoes/com"
 	"github.com/rs/zerolog/log"
+	"github.com/tailscale/wireguard-go/tun"
 	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wireguard/tun"
 	"tailscale.com/control/controlclient"
 	"tailscale.com/envknob"
 	"tailscale.com/ipn/ipnlocal"
@@ -59,8 +59,6 @@ type serverOptions struct {
 }
 
 func StartDaemon(ctx context.Context, cleanup bool, stopSignalCh chan bool) {
-	mu.Lock()
-	defer mu.Unlock()
 
 	envknob.PanicIfAnyEnvCheckedInInit()
 	envknob.ApplyDiskConfig()
@@ -75,9 +73,6 @@ func StartDaemon(ctx context.Context, cleanup bool, stopSignalCh chan bool) {
 	logf = logger.RateLimitedFn(logf, 5*time.Second, 5, 100)
 
 	if cleanup {
-		if envknob.Bool("TS_PLEASE_PANIC") {
-			panic("TS_PLEASE_PANIC asked us to panic")
-		}
 		dns.Cleanup(logf, tun_name)
 		router.Cleanup(logf, tun_name)
 		return
@@ -262,9 +257,9 @@ func tryEngine(logf logger.Logf, linkMon *monitor.Mon, dialer *tsdial.Dialer, na
 
 	e, err = wgengine.NewUserspaceEngine(logf, conf)
 	if err != nil {
-		return nil, onlyNetstack, err
+		return nil, false, err
 	}
-	return e, onlyNetstack, nil
+	return e, false, nil
 }
 
 func newNetstack(logf logger.Logf, dialer *tsdial.Dialer, e wgengine.Engine) (*netstack.Impl, error) {

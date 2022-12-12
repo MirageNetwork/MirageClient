@@ -52,6 +52,7 @@ func CreateDefaultPref() *ipn.Prefs {
 	prefs.AdvertiseTags = tags
 	prefs.Hostname = ""
 	prefs.ForceDaemon = true
+	prefs.LoggedOut = false
 	prefs.OperatorUser = ""
 	prefs.NetfilterMode = preftype.NetfilterOn
 
