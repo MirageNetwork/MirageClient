@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
@@ -43,6 +44,7 @@ type Notify struct {
 var mu sync.Mutex
 var notifyCh chan Notify
 var stopDaemonCh chan bool
+var releaseTrayCh chan bool
 
 func main() {
 
@@ -52,6 +54,7 @@ func main() {
 	ctx = context.Background()
 	notifyCh = make(chan Notify, 1)
 	stopDaemonCh = make(chan bool)
+	releaseTrayCh = make(chan bool)
 
 	onExit := func() {
 	}
@@ -64,8 +67,41 @@ func onReady() {
 	systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
 	systray.SetTitle("蜃境")
 	systray.SetTooltip("简单安全的组网工具")
+
+	loginMenu := systray.AddMenuItem("登录…", "点击进行登录")
+	connectMenu := systray.AddMenuItem("连接", "点击接入蜃境")
+	disconnMenu := systray.AddMenuItem("断开", "临时切断蜃境连接")
+	systray.AddSeparator()
+	userMenu := systray.AddMenuItem("", "")
+	userLogoutMenu := userMenu.AddSubMenuItem("登出", "")
+	nodeMenu := systray.AddMenuItem("本设备", "单击复制本节点IP")
+	systray.AddSeparator()
+	versionMenu := systray.AddMenuItem(backVersion, "点击查看详细信息")
+	mQuit := systray.AddMenuItem("退出", "退出蜃境")
+
+	connectMenu.Hide()
+	disconnMenu.Hide()
+	userMenu.Hide()
+	nodeMenu.Hide()
+	versionMenu.Hide()
+	loginMenu.Hide()
+
+	justLogin := false
 	go func() {
 		ctxD = context.Background()
+		go func(stopLogoSpin chan bool) {
+			for {
+				select {
+				case <-stopLogoSpin:
+					return
+				default:
+					systray.SetTemplateIcon(resource.Mlogo1, resource.Mlogo1)
+					<-time.After(300 * time.Millisecond)
+					systray.SetTemplateIcon(resource.Mlogo2, resource.Mlogo2)
+					<-time.After(300 * time.Millisecond)
+				}
+			}
+		}(releaseTrayCh)
 		go StartDaemon(ctxD, false, stopDaemonCh)
 		for {
 			st, err := LC.Status(ctx)
@@ -88,18 +124,8 @@ func onReady() {
 				break
 			}
 		}
-
-		loginMenu := systray.AddMenuItem("登录…", "点击进行登录")
-		connectMenu := systray.AddMenuItem("连接", "点击接入蜃境")
-		disconnMenu := systray.AddMenuItem("断开", "临时切断蜃境连接")
-		systray.AddSeparator()
-		userMenu := systray.AddMenuItem("", "")
-		userLogoutMenu := userMenu.AddSubMenuItem("登出", "")
-		nodeMenu := systray.AddMenuItem("本设备", "单击复制本节点IP")
-		systray.AddSeparator()
-		versionMenu := systray.AddMenuItem(backVersion, "点击查看详细信息")
-		mQuit := systray.AddMenuItem("退出", "退出蜃境")
-		justLogin := false
+		releaseTrayCh <- true
+		systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
 		for {
 			st, err := LC.Status(ctx)
 			if err != nil || st == nil {
@@ -114,13 +140,17 @@ func onReady() {
 			if st != nil && !justLogin {
 				switch st.BackendState {
 				case "NeedsLogin":
+					systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
 					userMenu.SetTitle("请先登录")
 					userMenu.Disable()
 					connectMenu.Hide()
 					disconnMenu.Hide()
+					loginMenu.Enable()
+					loginMenu.SetTitle("登录")
 					loginMenu.Show()
 					nodeMenu.Hide()
 				case "Stopped":
+					systray.SetTemplateIcon(resource.Logom, resource.Logom)
 					loginMenu.Hide()
 					userMenu.Enable()
 					userMenu.SetTitle(st.User[st.Self.UserID].LoginName)
@@ -131,6 +161,7 @@ func onReady() {
 					nodeMenu.Disable()
 					nodeMenu.Show()
 				case "Running":
+					systray.SetTemplateIcon(resource.Mlogo, resource.Mlogo)
 					loginMenu.Hide()
 					userMenu.Enable()
 					userMenu.SetTitle(st.User[st.Self.UserID].LoginName)
@@ -154,6 +185,23 @@ func onReady() {
 				continue
 
 			case <-loginMenu.ClickedCh:
+				go func(stopLogoSpin chan bool) {
+					for {
+						select {
+						case <-stopLogoSpin:
+							return
+						default:
+							loginMenu.Disable()
+							loginMenu.SetTitle("登录中…")
+							systray.SetTemplateIcon(resource.Mlogo1, resource.Mlogo1)
+							<-time.After(300 * time.Millisecond)
+							loginMenu.Disable()
+							loginMenu.SetTitle("登录中…")
+							systray.SetTemplateIcon(resource.Mlogo2, resource.Mlogo2)
+							<-time.After(300 * time.Millisecond)
+						}
+					}
+				}(releaseTrayCh)
 				kickOffLogin(notifyCh)
 				justLogin = true
 				continue
@@ -208,6 +256,8 @@ func onReady() {
 						}
 					}
 					justLogin = false
+					releaseTrayCh <- true
+					systray.SetTemplateIcon(resource.Mlogo, resource.Mlogo)
 					logNotify("已连接", errors.New(""))
 				}
 				continue
