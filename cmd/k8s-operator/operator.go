@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/exp/slices"
+	"golang.org/x/oauth2/clientcredentials"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -38,22 +39,29 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	"sigs.k8s.io/yaml"
 	"tailscale.com/client/tailscale"
+	"tailscale.com/ipn"
 	"tailscale.com/ipn/store/kubestore"
 	"tailscale.com/tsnet"
 	"tailscale.com/types/logger"
 )
 
 func main() {
+	// Required to use our client API. We're fine with the instability since the
+	// client lives in the same repo as this code.
+	tailscale.I_Acknowledge_This_API_Is_Unstable = true
+
 	var (
-		hostname    = defaultEnv("OPERATOR_HOSTNAME", "tailscale-operator")
-		kubeSecret  = defaultEnv("OPERATOR_SECRET", "")
-		tsNamespace = defaultEnv("OPERATOR_NAMESPACE", "default")
-		tslogging   = defaultEnv("OPERATOR_LOGGING", "info")
-		image       = defaultEnv("PROXY_IMAGE", "tailscale/tailscale:latest")
-		tags        = defaultEnv("PROXY_TAGS", "tag:k8s")
+		hostname         = defaultEnv("OPERATOR_HOSTNAME", "tailscale-operator")
+		kubeSecret       = defaultEnv("OPERATOR_SECRET", "")
+		operatorTags     = defaultEnv("OPERATOR_INITIAL_TAGS", "tag:k8s-operator")
+		tsNamespace      = defaultEnv("OPERATOR_NAMESPACE", "default")
+		tslogging        = defaultEnv("OPERATOR_LOGGING", "info")
+		clientIDPath     = defaultEnv("CLIENT_ID_FILE", "")
+		clientSecretPath = defaultEnv("CLIENT_SECRET_FILE", "")
+		image            = defaultEnv("PROXY_IMAGE", "tailscale/tailscale:latest")
+		tags             = defaultEnv("PROXY_TAGS", "tag:k8s")
 	)
 
-	tailscale.I_Acknowledge_This_API_Is_Unstable = true
 	var opts []kzap.Opts
 	switch tslogging {
 	case "info":
@@ -66,6 +74,25 @@ func main() {
 	zlog := kzap.NewRaw(opts...).Sugar()
 	logf.SetLogger(zapr.NewLogger(zlog.Desugar()))
 	startlog := zlog.Named("startup")
+
+	if clientIDPath == "" || clientSecretPath == "" {
+		startlog.Fatalf("CLIENT_ID_FILE and CLIENT_SECRET_FILE must be set")
+	}
+	clientID, err := os.ReadFile(clientIDPath)
+	if err != nil {
+		startlog.Fatalf("reading client ID %q: %v", clientIDPath, err)
+	}
+	clientSecret, err := os.ReadFile(clientSecretPath)
+	if err != nil {
+		startlog.Fatalf("reading client secret %q: %v", clientSecretPath, err)
+	}
+	credentials := clientcredentials.Config{
+		ClientID:     string(clientID),
+		ClientSecret: string(clientSecret),
+		TokenURL:     "https://login.tailscale.com/api/v2/oauth/token",
+	}
+	tsClient := tailscale.NewClient("-", nil)
+	tsClient.HTTPClient = credentials.Client(context.Background())
 	s := &tsnet.Server{
 		Hostname: hostname,
 		Logf:     zlog.Named("tailscaled").Debugf,
@@ -87,10 +114,11 @@ func main() {
 	}
 
 	ctx := context.Background()
-	loginShown := false
+	loginDone := false
 	machineAuthShown := false
 waitOnline:
 	for {
+		startlog.Debugf("querying tailscaled status")
 		st, err := lc.StatusWithoutPeers(ctx)
 		if err != nil {
 			startlog.Fatalf("getting status: %v", err)
@@ -99,10 +127,32 @@ waitOnline:
 		case "Running":
 			break waitOnline
 		case "NeedsLogin":
-			if !loginShown && st.AuthURL != "" {
-				startlog.Infof("tailscale needs login, please visit: %s", st.AuthURL)
-				loginShown = true
+			if loginDone {
+				break
 			}
+			caps := tailscale.KeyCapabilities{
+				Devices: tailscale.KeyDeviceCapabilities{
+					Create: tailscale.KeyDeviceCreateCapabilities{
+						Reusable:      false,
+						Preauthorized: true,
+						Tags:          strings.Split(operatorTags, ","),
+					},
+				},
+			}
+			authkey, _, err := tsClient.CreateKey(ctx, caps)
+			if err != nil {
+				startlog.Fatalf("creating operator authkey: %v", err)
+			}
+			if err := lc.Start(ctx, ipn.Options{
+				AuthKey: authkey,
+			}); err != nil {
+				startlog.Fatalf("starting tailscale: %v", err)
+			}
+			if err := lc.StartLoginInteractive(ctx); err != nil {
+				startlog.Fatalf("starting login: %v", err)
+			}
+			startlog.Debugf("requested login by authkey")
+			loginDone = true
 		case "NeedsMachineAuth":
 			if !machineAuthShown {
 				startlog.Infof("Machine authorization required, please visit the admin panel to authorize")
@@ -112,6 +162,14 @@ waitOnline:
 			startlog.Debugf("waiting for tailscale to start: %v", st.BackendState)
 		}
 		time.Sleep(time.Second)
+	}
+
+	sr := &ServiceReconciler{
+		tsClient:          tsClient,
+		defaultTags:       strings.Split(tags, ","),
+		operatorNamespace: tsNamespace,
+		proxyImage:        image,
+		logger:            zlog.Named("service-reconciler"),
 	}
 
 	// For secrets and statefulsets, we only get permission to touch the objects
@@ -134,17 +192,7 @@ waitOnline:
 	if err != nil {
 		startlog.Fatalf("could not create manager: %v", err)
 	}
-	tsClient, err := s.APIClient()
-	if err != nil {
-		startlog.Fatalf("getting tailscale client: %v", err)
-	}
-	sr := &ServiceReconciler{
-		tsClient:          tsClient,
-		defaultTags:       strings.Split(tags, ","),
-		operatorNamespace: tsNamespace,
-		proxyImage:        image,
-		logger:            zlog.Named("service-reconciler"),
-	}
+
 	reconcileFilter := handler.EnqueueRequestsFromMapFunc(func(o client.Object) []reconcile.Request {
 		ls := o.GetLabels()
 		if ls[LabelManaged] != "true" {
@@ -220,15 +268,37 @@ func childResourceLabels(parent *corev1.Service) map[string]string {
 	}
 }
 
-// cleanupIfRequired removes any existing resources related to svc.
+func (a *ServiceReconciler) Reconcile(ctx context.Context, req reconcile.Request) (_ reconcile.Result, err error) {
+	logger := a.logger.With("service-ns", req.Namespace, "service-name", req.Name)
+	logger.Debugf("starting reconcile")
+	defer logger.Debugf("reconcile finished")
+
+	svc := new(corev1.Service)
+	err = a.Get(ctx, req.NamespacedName, svc)
+	if apierrors.IsNotFound(err) {
+		// Request object not found, could have been deleted after reconcile request.
+		logger.Debugf("service not found, assuming it was deleted")
+		return reconcile.Result{}, nil
+	} else if err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to get svc: %w", err)
+	}
+	if !svc.DeletionTimestamp.IsZero() || !a.shouldExpose(svc) {
+		logger.Debugf("service is being deleted or should not be exposed, cleaning up")
+		return reconcile.Result{}, a.maybeCleanup(ctx, logger, svc)
+	}
+
+	return reconcile.Result{}, a.maybeProvision(ctx, logger, svc)
+}
+
+// maybeCleanup removes any existing resources related to serving svc over tailscale.
 //
 // This function is responsible for removing the finalizer from the service,
 // once all associated resources are gone.
-func (a *ServiceReconciler) cleanupIfRequired(ctx context.Context, logger *zap.SugaredLogger, svc *corev1.Service) (reconcile.Result, error) {
+func (a *ServiceReconciler) maybeCleanup(ctx context.Context, logger *zap.SugaredLogger, svc *corev1.Service) error {
 	ix := slices.Index(svc.Finalizers, FinalizerName)
 	if ix < 0 {
 		logger.Debugf("no finalizer, nothing to do")
-		return reconcile.Result{}, nil
+		return nil
 	}
 
 	ml := childResourceLabels(svc)
@@ -241,32 +311,32 @@ func (a *ServiceReconciler) cleanupIfRequired(ctx context.Context, logger *zap.S
 	// should be removed.
 	sts, err := getSingleObject[appsv1.StatefulSet](ctx, a.Client, a.operatorNamespace, ml)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("getting statefulset: %w", err)
+		return fmt.Errorf("getting statefulset: %w", err)
 	}
 	if sts != nil {
 		if !sts.GetDeletionTimestamp().IsZero() {
 			// Deletion in progress, check again later. We'll get another
 			// notification when the deletion is complete.
 			logger.Debugf("waiting for statefulset %s/%s deletion", sts.GetNamespace(), sts.GetName())
-			return reconcile.Result{}, nil
+			return nil
 		}
 		err := a.DeleteAllOf(ctx, &appsv1.StatefulSet{}, client.InNamespace(a.operatorNamespace), client.MatchingLabels(ml), client.PropagationPolicy(metav1.DeletePropagationForeground))
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("deleting statefulset: %w", err)
+			return fmt.Errorf("deleting statefulset: %w", err)
 		}
 		logger.Debugf("started deletion of statefulset %s/%s", sts.GetNamespace(), sts.GetName())
-		return reconcile.Result{}, nil
+		return nil
 	}
 
 	id, _, err := a.getDeviceInfo(ctx, svc)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("getting device info: %w", err)
+		return fmt.Errorf("getting device info: %w", err)
 	}
 	if id != "" {
 		// TODO: handle case where the device is already deleted, but the secret
 		// is still around.
 		if err := a.tsClient.DeleteDevice(ctx, id); err != nil {
-			return reconcile.Result{}, fmt.Errorf("deleting device: %w", err)
+			return fmt.Errorf("deleting device: %w", err)
 		}
 	}
 
@@ -276,13 +346,13 @@ func (a *ServiceReconciler) cleanupIfRequired(ctx context.Context, logger *zap.S
 	}
 	for _, typ := range types {
 		if err := a.DeleteAllOf(ctx, typ, client.InNamespace(a.operatorNamespace), client.MatchingLabels(ml)); err != nil {
-			return reconcile.Result{}, err
+			return err
 		}
 	}
 
 	svc.Finalizers = append(svc.Finalizers[:ix], svc.Finalizers[ix+1:]...)
 	if err := a.Update(ctx, svc); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
+		return fmt.Errorf("failed to remove finalizer: %w", err)
 	}
 
 	// Unlike most log entries in the reconcile loop, this will get printed
@@ -290,7 +360,85 @@ func (a *ServiceReconciler) cleanupIfRequired(ctx context.Context, logger *zap.S
 	// cleanup removes the tailscale finalizer, which will make all future
 	// reconciles exit early.
 	logger.Infof("unexposed service from tailnet")
-	return reconcile.Result{}, nil
+	return nil
+}
+
+// maybeProvision ensures that svc is exposed over tailscale, taking any actions
+// necessary to reach that state.
+//
+// This function adds a finalizer to svc, ensuring that we can handle orderly
+// deprovisioning later.
+func (a *ServiceReconciler) maybeProvision(ctx context.Context, logger *zap.SugaredLogger, svc *corev1.Service) error {
+	if !slices.Contains(svc.Finalizers, FinalizerName) {
+		// This log line is printed exactly once during initial provisioning,
+		// because once the finalizer is in place this block gets skipped. So,
+		// this is a nice place to tell the operator that the high level,
+		// multi-reconcile operation is underway.
+		logger.Infof("exposing service over tailscale")
+		svc.Finalizers = append(svc.Finalizers, FinalizerName)
+		if err := a.Update(ctx, svc); err != nil {
+			return fmt.Errorf("failed to add finalizer: %w", err)
+		}
+	}
+
+	// Do full reconcile.
+	hsvc, err := a.reconcileHeadlessService(ctx, logger, svc)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile headless service: %w", err)
+	}
+
+	tags := a.defaultTags
+	if tstr, ok := svc.Annotations[AnnotationTags]; ok {
+		tags = strings.Split(tstr, ",")
+	}
+	secretName, err := a.createOrGetSecret(ctx, logger, svc, hsvc, tags)
+	if err != nil {
+		return fmt.Errorf("failed to create or get API key secret: %w", err)
+	}
+	_, err = a.reconcileSTS(ctx, logger, svc, hsvc, secretName)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile statefulset: %w", err)
+	}
+
+	if !a.hasLoadBalancerClass(svc) {
+		logger.Debugf("service is not a LoadBalancer, so not updating ingress")
+		return nil
+	}
+
+	_, tsHost, err := a.getDeviceInfo(ctx, svc)
+	if err != nil {
+		return fmt.Errorf("failed to get device ID: %w", err)
+	}
+	if tsHost == "" {
+		logger.Debugf("no Tailscale hostname known yet, waiting for proxy pod to finish auth")
+		// No hostname yet. Wait for the proxy pod to auth.
+		svc.Status.LoadBalancer.Ingress = nil
+		if err := a.Status().Update(ctx, svc); err != nil {
+			return fmt.Errorf("failed to update service status: %w", err)
+		}
+		return nil
+	}
+
+	logger.Debugf("setting ingress hostname to %q", tsHost)
+	svc.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{
+		{
+			Hostname: tsHost,
+		},
+	}
+	if err := a.Status().Update(ctx, svc); err != nil {
+		return fmt.Errorf("failed to update service status: %w", err)
+	}
+	return nil
+}
+
+func (a *ServiceReconciler) shouldExpose(svc *corev1.Service) bool {
+	// Headless services can't be exposed, since there is no ClusterIP to
+	// forward to.
+	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+		return false
+	}
+
+	return a.hasLoadBalancerClass(svc) || a.hasAnnotation(svc)
 }
 
 func (a *ServiceReconciler) hasLoadBalancerClass(svc *corev1.Service) bool {
@@ -303,96 +451,6 @@ func (a *ServiceReconciler) hasLoadBalancerClass(svc *corev1.Service) bool {
 func (a *ServiceReconciler) hasAnnotation(svc *corev1.Service) bool {
 	return svc != nil &&
 		svc.Annotations[AnnotationExpose] == "true"
-}
-
-func (a *ServiceReconciler) shouldExpose(svc *corev1.Service) bool {
-	return a.hasLoadBalancerClass(svc) || a.hasAnnotation(svc)
-}
-
-func (a *ServiceReconciler) Reconcile(ctx context.Context, req reconcile.Request) (_ reconcile.Result, err error) {
-	logger := a.logger.With("service-ns", req.Namespace, "service-name", req.Name)
-	logger.Debugf("starting reconcile")
-	defer logger.Debugf("reconcile finished")
-
-	svc := new(corev1.Service)
-	err = a.Get(ctx, req.NamespacedName, svc)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
-			logger.Debugf("service not found, assuming it was deleted")
-			return reconcile.Result{}, nil
-		}
-		return reconcile.Result{}, fmt.Errorf("failed to get svc: %w", err)
-	}
-	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
-		logger.Debugf("service is headless, nothing to do")
-		return reconcile.Result{}, nil
-	}
-	if !svc.DeletionTimestamp.IsZero() || !a.shouldExpose(svc) {
-		logger.Debugf("service is being deleted or should not be exposed, cleaning up")
-		return a.cleanupIfRequired(ctx, logger, svc)
-	}
-
-	if !slices.Contains(svc.Finalizers, FinalizerName) {
-		// This log line is printed exactly once during initial provisioning,
-		// because once the finalizer is in place this block gets skipped. So,
-		// this is a nice place to tell the operator that the high level,
-		// multi-reconcile operation is underway.
-		logger.Infof("exposing service over tailscale")
-		svc.Finalizers = append(svc.Finalizers, FinalizerName)
-		if err := a.Update(ctx, svc); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to add finalizer: %w", err)
-		}
-	}
-
-	// Do full reconcile.
-	hsvc, err := a.reconcileHeadlessService(ctx, logger, svc)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to reconcile headless service: %w", err)
-	}
-
-	tags := a.defaultTags
-	if tstr, ok := svc.Annotations[AnnotationTags]; ok {
-		tags = strings.Split(tstr, ",")
-	}
-	secretName, err := a.createOrGetSecret(ctx, logger, svc, hsvc, tags)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to create or get API key secret: %w", err)
-	}
-	_, err = a.reconcileSTS(ctx, logger, svc, hsvc, secretName)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to reconcile statefulset: %w", err)
-	}
-
-	if !a.hasLoadBalancerClass(svc) {
-		logger.Debugf("service is not a LoadBalancer, so not updating ingress")
-		return reconcile.Result{}, nil
-	}
-
-	_, tsHost, err := a.getDeviceInfo(ctx, svc)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to get device ID: %w", err)
-	}
-	if tsHost == "" {
-		logger.Debugf("no Tailscale hostname known yet, waiting for proxy pod to finish auth")
-		// No hostname yet. Wait for the proxy pod to auth.
-		svc.Status.LoadBalancer.Ingress = nil
-		if err := a.Status().Update(ctx, svc); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to update service status: %w", err)
-		}
-		return reconcile.Result{}, nil
-	}
-
-	logger.Debugf("setting ingress hostname to %q", tsHost)
-	svc.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{
-		{
-			Hostname: tsHost,
-		},
-	}
-	if err := a.Status().Update(ctx, svc); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to update service status: %w", err)
-	}
-	return reconcile.Result{}, nil
 }
 
 func (a *ServiceReconciler) reconcileHeadlessService(ctx context.Context, logger *zap.SugaredLogger, svc *corev1.Service) (*corev1.Service, error) {
