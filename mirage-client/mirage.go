@@ -206,7 +206,7 @@ func onReady() {
 						myDevItem.Item.Hide()
 					}
 					for _, peer := range st.Peer {
-						if peer.UserID == st.Self.UserID {
+						if peer.UserID == st.Self.UserID && peer.Online {
 							needCreateNewMenuItem := true
 							tmpIPAddr := peer.TailscaleIPs[0]
 							if tmpIPAddr.Is6() {
@@ -243,14 +243,14 @@ func onReady() {
 								}(myDevPool[tmpIPAddr])
 							}
 						}
-						for uid, user := range st.User {
-							if uid == st.Self.UserID {
-								myDevNetMenu.SetTitle(user.LoginName)
-								break
-							}
-						}
-						devicesMenu.Show()
 					}
+					for uid, user := range st.User {
+						if uid == st.Self.UserID {
+							myDevNetMenu.SetTitle(user.LoginName)
+							break
+						}
+					}
+					devicesMenu.Show()
 				}
 			}
 			select {
