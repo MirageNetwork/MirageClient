@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"os/signal"
 	"reflect"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"tailscale.com/ipn"
@@ -47,6 +49,8 @@ var notifyCh chan Notify
 var stopDaemonCh chan bool
 var releaseTrayCh chan bool
 
+var netMapChn chan bool
+
 type DevMenuPool struct {
 	Item systray.MenuItem
 	Peer ipnstate.PeerStatus
@@ -64,10 +68,45 @@ func main() {
 	stopDaemonCh = make(chan bool)
 	releaseTrayCh = make(chan bool)
 
+	netMapChn = make(chan bool)
+
 	onExit := func() {
 	}
 
+	go WatchDaemon(ctx, netMapChn)
+
 	systray.Run(onReady, onExit)
+}
+
+func WatchDaemon(ctx context.Context, netMapCh chan bool) {
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	defer cancelWatch()
+	watcher, err := LC.WatchIPNBus(watchCtx, 0)
+	if err != nil {
+		logNotify("守护进程监听管道建立失败", err)
+		return
+	}
+	defer watcher.Close()
+
+	go func() {
+		interrupt := make(chan os.Signal, 1)
+		signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM)
+		select {
+		case <-interrupt:
+			cancelWatch()
+		case <-watchCtx.Done():
+		}
+	}()
+	for {
+		n, err := watcher.Next()
+		if err != nil {
+			fmt.Println("[ERROR] " + err.Error())
+			continue
+		}
+		if nm := n.NetMap; nm != nil {
+			netMapChn <- true
+		}
+	}
 }
 
 func onReady() {
@@ -143,15 +182,6 @@ func onReady() {
 		}
 		releaseTrayCh <- true
 		systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
-
-		go func(verMenu *systray.MenuItem) {
-			for {
-				select {
-				case <-time.After(10 * time.Second):
-					verMenu.ClickedCh <- struct{}{}
-				}
-			}
-		}(versionMenu)
 
 		for {
 			st, err := LC.Status(ctx)
@@ -297,6 +327,9 @@ func onReady() {
 					clipboard.WriteAll(st.TailscaleIPs[0].String())
 					logNotify("您的本设备IP已复制", errors.New(""))
 				}
+				continue
+			case <-netMapChn:
+				fmt.Println("Refresh menu due to netmap rcvd")
 				continue
 			case msg := <-notifyCh:
 				switch msg.NType {
