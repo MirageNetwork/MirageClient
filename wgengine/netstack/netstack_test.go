@@ -8,10 +8,8 @@ import (
 	"fmt"
 	"net/netip"
 	"runtime"
-	"sync/atomic"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/refs"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnlocal"
 	"tailscale.com/ipn/store/mem"
@@ -82,15 +80,6 @@ func getMemStats() (ms runtime.MemStats) {
 	runtime.GC()
 	runtime.ReadMemStats(&ms)
 	return
-}
-
-func TestNetstackLeakMode(t *testing.T) {
-	// See the comments in init(), and/or in issue #4309.
-	// Influenced by an envknob that may be useful in tests, so just check that
-	// it's not the oddly behaving zero value.
-	if refs.GetLeakMode() == 0 {
-		t.Fatalf("refs.leakMode is 0, want a non-zero value")
-	}
 }
 
 func makeNetstack(t *testing.T, config func(*Impl)) *Impl {
@@ -433,8 +422,8 @@ func TestShouldProcessInbound(t *testing.T) {
 				i.atomicIsLocalIPFunc.Store(func(netip.Addr) bool { return false })
 
 				// Set the PeerAPI port to the Dst port above.
-				atomic.StoreUint32(&i.peerapiPort4Atomic, 5555)
-				atomic.StoreUint32(&i.peerapiPort6Atomic, 5555)
+				i.peerapiPort4Atomic.Store(5555)
+				i.peerapiPort6Atomic.Store(5555)
 			},
 			want: false,
 		},

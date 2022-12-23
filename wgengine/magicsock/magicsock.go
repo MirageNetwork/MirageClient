@@ -36,7 +36,9 @@ import (
 	"tailscale.com/derp"
 	"tailscale.com/derp/derphttp"
 	"tailscale.com/disco"
+	"tailscale.com/envknob"
 	"tailscale.com/health"
+	"tailscale.com/hostinfo"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/logtail/backoff"
 	"tailscale.com/net/connstats"
@@ -1945,6 +1947,12 @@ const (
 	discoVerboseLog
 )
 
+// TS_DISCO_PONG_IPV4_DELAY, if set, is a time.Duration string that is how much
+// fake latency to add before replying to disco pings. This can be used to bias
+// peers towards using IPv6 when both IPv4 and IPv6 are available at similar
+// speeds.
+var debugIPv4DiscoPingPenalty = envknob.RegisterDuration("TS_DISCO_PONG_IPV4_DELAY")
+
 // sendDiscoMessage sends discovery message m to dstDisco at dst.
 //
 // If dst is a DERP IP:port, then dstKey must be non-zero.
@@ -1952,6 +1960,11 @@ const (
 // The dstKey should only be non-zero if the dstDisco key
 // unambiguously maps to exactly one peer.
 func (c *Conn) sendDiscoMessage(dst netip.AddrPort, dstKey key.NodePublic, dstDisco key.DiscoPublic, m disco.Message, logLevel discoLogLevel) (sent bool, err error) {
+	isDERP := dst.Addr() == derpMagicIPAddr
+	if _, isPong := m.(*disco.Pong); isPong && !isDERP && dst.Addr().Is4() {
+		time.Sleep(debugIPv4DiscoPingPenalty())
+	}
+
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -1967,7 +1980,6 @@ func (c *Conn) sendDiscoMessage(dst netip.AddrPort, dstKey key.NodePublic, dstDi
 	di := c.discoInfoLocked(dstDisco)
 	c.mu.Unlock()
 
-	isDERP := dst.Addr() == derpMagicIPAddr
 	if isDERP {
 		metricSendDiscoDERP.Add(1)
 	} else {
@@ -3209,6 +3221,14 @@ type RebindingUDPConn struct {
 func upgradePacketConn(p nettype.PacketConn, network string) nettype.PacketConn {
 	uc, ok := p.(*net.UDPConn)
 	if ok && runtime.GOOS == "linux" && (network == "udp4" || network == "udp6") {
+		// recvmmsg/sendmmsg were added in 2.6.33 but we support down to 2.6.32
+		// for old NAS devices. See https://github.com/tailscale/tailscale/issues/6807.
+		// As a cheap heuristic: if the Linux kernel starts with "2", just consider
+		// it too old for the fast paths. Nobody who cares about performance runs such
+		// ancient kernels.
+		if strings.HasPrefix(hostinfo.GetOSVersion(), "2") {
+			return p
+		}
 		// Non-Linux does not support batch operations. x/net will fall back to
 		// recv/sendmsg, but not all platforms have recv/sendmsg support. Keep
 		// this simple for now.
@@ -3546,12 +3566,14 @@ func (c *Conn) UpdateStatus(sb *ipnstate.StatusBuilder) {
 		ss.TailscaleIPs = tailscaleIPs
 	})
 
-	c.peerMap.forEachEndpoint(func(ep *endpoint) {
-		ps := &ipnstate.PeerStatus{InMagicSock: true}
-		//ps.Addrs = append(ps.Addrs, n.Endpoints...)
-		ep.populatePeerStatus(ps)
-		sb.AddPeer(ep.publicKey, ps)
-	})
+	if sb.WantPeers {
+		c.peerMap.forEachEndpoint(func(ep *endpoint) {
+			ps := &ipnstate.PeerStatus{InMagicSock: true}
+			//ps.Addrs = append(ps.Addrs, n.Endpoints...)
+			ep.populatePeerStatus(ps)
+			sb.AddPeer(ep.publicKey, ps)
+		})
+	}
 
 	c.foreachActiveDerpSortedLocked(func(node int, ad activeDerp) {
 		// TODO(bradfitz): add to ipnstate.StatusBuilder
