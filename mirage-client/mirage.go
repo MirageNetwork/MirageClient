@@ -9,9 +9,7 @@ import (
 	"os/signal"
 	"reflect"
 	"strings"
-	"sync"
 	"syscall"
-	"time"
 
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
@@ -44,7 +42,6 @@ type Notify struct {
 	NMsg  string
 }
 
-var mu sync.Mutex
 var notifyCh chan Notify
 var stopDaemonCh chan bool
 var releaseTrayCh chan bool
@@ -57,6 +54,8 @@ type DevMenuPool struct {
 }
 
 var myDevPool map[netip.Addr]DevMenuPool
+
+var gui MirageMenu
 
 func main() {
 
@@ -110,55 +109,14 @@ func WatchDaemon(ctx context.Context, netMapCh chan bool) {
 }
 
 func onReady() {
-
-	systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
-	systray.SetTitle("蜃境")
-	systray.SetTooltip("简单安全的组网工具")
-
-	loginMenu := systray.AddMenuItem("登录…", "点击进行登录")
-	connectMenu := systray.AddMenuItem("连接", "点击接入蜃境")
-	disconnMenu := systray.AddMenuItem("断开", "临时切断蜃境连接")
-	systray.AddSeparator()
-	userMenu := systray.AddMenuItem("", "")
-	userLogoutMenu := userMenu.AddSubMenuItem("登出", "")
-	systray.AddSeparator()
-	nodeMenu := systray.AddMenuItem("本设备", "单击复制本节点IP")
-	devicesMenu := systray.AddMenuItem("网内设备", "显示你可见的全部设备")
-	myDevMenu := devicesMenu.AddSubMenuItem("我的设备", "隶属于我的设备")
-	myDevNetMenu := myDevMenu.AddSubMenuItem("", "")
-	myDevNetMenu.Disable()
-	myDevSepar := myDevMenu.AddSubMenuItem("——————", "")
-	myDevSepar.Disable()
-	myDevPool = make(map[netip.Addr]DevMenuPool)
-	devicesMenu.Hide()
-	systray.AddSeparator()
-	versionMenu := systray.AddMenuItem(backVersion, "点击查看详细信息")
-	mQuit := systray.AddMenuItem("退出", "退出蜃境")
-
-	connectMenu.Hide()
-	disconnMenu.Hide()
-	userMenu.Hide()
-	nodeMenu.Hide()
-	versionMenu.Hide()
-	loginMenu.Hide()
+	gui.init()
 
 	justLogin := false
 	go func() {
 		ctxD = context.Background()
-		go func(stopLogoSpin chan bool) {
-			for {
-				select {
-				case <-stopLogoSpin:
-					return
-				default:
-					systray.SetTemplateIcon(resource.Mlogo1, resource.Mlogo1)
-					<-time.After(300 * time.Millisecond)
-					systray.SetTemplateIcon(resource.Mlogo2, resource.Mlogo2)
-					<-time.After(300 * time.Millisecond)
-				}
-			}
-		}(releaseTrayCh)
+		go logoSpin(releaseTrayCh, 300)
 		go StartDaemon(ctxD, false, stopDaemonCh)
+
 		for {
 			st, err := LC.Status(ctx)
 			if err != nil {
@@ -193,136 +151,46 @@ func onReady() {
 				log.Info().Msg("Daemon: " + st.Version)
 				backVersion = strings.Split(st.Version, "-")[0]
 			}
-			versionMenu.SetTitle(backVersion)
 			if st != nil && !justLogin {
 				switch st.BackendState {
 				case "NeedsLogin":
-					systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
-					userMenu.SetTitle("请先登录")
-					userMenu.Disable()
-					connectMenu.Hide()
-					disconnMenu.Hide()
-					loginMenu.Enable()
-					loginMenu.SetTitle("登录")
-					loginMenu.Show()
-					nodeMenu.Hide()
-					devicesMenu.Hide()
+					gui.setNotLogin(backVersion)
 				case "Stopped":
-					systray.SetTemplateIcon(resource.Logom, resource.Logom)
-					loginMenu.Hide()
-					userMenu.Enable()
-					userMenu.SetTitle(st.User[st.Self.UserID].DisplayName)
-					userMenu.Show()
-					connectMenu.Show()
-					disconnMenu.Hide()
-					nodeMenu.SetTitle("本设备")
-					nodeMenu.Disable()
-					nodeMenu.Show()
-					devicesMenu.Hide()
+					gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
 				case "Running":
-					systray.SetTemplateIcon(resource.Mlogo, resource.Mlogo)
-					loginMenu.Hide()
-					userMenu.Enable()
-					userMenu.SetTitle(st.User[st.Self.UserID].DisplayName)
-					userMenu.Show()
-					connectMenu.Hide()
-					disconnMenu.Show()
-					if len(st.TailscaleIPs) > 0 {
-						nodeMenu.SetTitle("本设备：" + st.Self.HostName + " (" + st.TailscaleIPs[0].String() + ")")
+					if st.TailscaleIPs[0].Is4() {
+						gui.setRunning(st.User[st.Self.UserID].DisplayName, st.Self.HostName, st.TailscaleIPs[0].String(), backVersion)
+					} else {
+						gui.setRunning(st.User[st.Self.UserID].DisplayName, st.Self.HostName, st.TailscaleIPs[1].String(), backVersion)
 					}
-					nodeMenu.Enable()
-					nodeMenu.Show()
-					for _, myDevItem := range myDevPool {
-						myDevItem.Item.Hide()
-					}
-					for _, peer := range st.Peer {
-						if peer.UserID == st.Self.UserID && peer.Online {
-							needCreateNewMenuItem := true
-							tmpIPAddr := peer.TailscaleIPs[0]
-							if tmpIPAddr.Is6() {
-								tmpIPAddr = peer.TailscaleIPs[1]
-							}
-
-							for ip, myDevMenuItem := range myDevPool {
-								if ip.Compare(tmpIPAddr) == 0 {
-									myDevMenuItem.Item.Show()
-									myDevMenuItem.Item.SetTitle(peer.HostName)
-									myDevMenuItem.Peer = *peer
-									needCreateNewMenuItem = false
-									break
-								}
-							}
-							if needCreateNewMenuItem {
-								tmpMyDevSubMenu := myDevMenu.AddSubMenuItem(peer.HostName, tmpIPAddr.String())
-								myDevPool[tmpIPAddr] = DevMenuPool{
-									Item: *tmpMyDevSubMenu,
-									Peer: *peer,
-								}
-								go func(menuItem DevMenuPool) {
-									for {
-										select {
-										case <-menuItem.Item.ClickedCh:
-											if menuItem.Peer.TailscaleIPs[0].Is4() {
-												clipboard.WriteAll(menuItem.Peer.TailscaleIPs[0].String())
-											} else {
-												clipboard.WriteAll(menuItem.Peer.TailscaleIPs[1].String())
-											}
-											logNotify("设备"+menuItem.Peer.HostName+"的IP已复制", errors.New(""))
-										}
-									}
-								}(myDevPool[tmpIPAddr])
-							}
-						}
-					}
-					for uid, user := range st.User {
-						if uid == st.Self.UserID {
-							myDevNetMenu.SetTitle(user.LoginName)
-							break
-						}
-					}
-					devicesMenu.Show()
+					log.Info().Msg("Update the GUI nodelist")
+					gui.nodeListMenu.update(st)
 				}
 			}
 			select {
-			case <-mQuit.ClickedCh:
+			case <-gui.quitMenu.ClickedCh:
 				systray.Quit()
 				fmt.Println("退出...")
 				continue
-			case <-versionMenu.ClickedCh:
+			case <-gui.versionMenu.ClickedCh:
 				fmt.Println("you clicked version")
 				continue
 
-			case <-loginMenu.ClickedCh:
-				go func(stopLogoSpin chan bool) {
-					for {
-						select {
-						case <-stopLogoSpin:
-							return
-						default:
-							loginMenu.Disable()
-							loginMenu.SetTitle("登录中…")
-							systray.SetTemplateIcon(resource.Mlogo1, resource.Mlogo1)
-							<-time.After(300 * time.Millisecond)
-							loginMenu.Disable()
-							loginMenu.SetTitle("登录中…")
-							systray.SetTemplateIcon(resource.Mlogo2, resource.Mlogo2)
-							<-time.After(300 * time.Millisecond)
-						}
-					}
-				}(releaseTrayCh)
+			case <-gui.loginMenu.ClickedCh:
+				go logoSpin(releaseTrayCh, 300)
 				kickOffLogin(notifyCh)
 				justLogin = true
 				continue
-			case <-userLogoutMenu.ClickedCh:
+			case <-gui.userLogoutMenu.ClickedCh:
 				LC.Logout(ctx)
 				continue
-			case <-connectMenu.ClickedCh:
+			case <-gui.connectMenu.ClickedCh:
 				doConn()
 				continue
-			case <-disconnMenu.ClickedCh:
+			case <-gui.disconnMenu.ClickedCh:
 				doDisconn()
 				continue
-			case <-nodeMenu.ClickedCh:
+			case <-gui.nodeMenu.ClickedCh:
 				if len(st.TailscaleIPs) > 0 {
 					clipboard.WriteAll(st.TailscaleIPs[0].String())
 					logNotify("您的本设备IP已复制", errors.New(""))
