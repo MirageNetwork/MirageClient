@@ -1,22 +1,13 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"net/netip"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"sync"
-	"syscall"
+	"reflect"
 
-	"github.com/gen2brain/beeep"
-	"github.com/rs/zerolog/log"
-	"tailscale.com/client/tailscale"
-	"tailscale.com/hostinfo"
 	"tailscale.com/ipn"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/types/preftype"
 )
 
@@ -84,154 +75,35 @@ func GetAllMaskedPref(ipnPref ipn.Prefs) ipn.MaskedPrefs {
 	}
 }
 
-func SimpleRun(lc tailscale.LocalClient, ctx context.Context) {
-	hi := hostinfo.New()
-	fmt.Println(hi.Desktop)
-	_, err := lc.EditPrefs(ctx, &ipn.MaskedPrefs{
-		Prefs: ipn.Prefs{
-			WantRunning: true,
-		},
-		WantRunningSet: true,
-	})
-	if err != nil {
-		log.Error().Msg(err.Error())
+func updatePrefs(st *ipnstate.Status, prefs, curPrefs *ipn.Prefs) (simpleUp bool, justEditMP *ipn.MaskedPrefs, err error) {
+	if prefs.OperatorUser == "" && curPrefs.OperatorUser == os.Getenv("USER") {
+		prefs.OperatorUser = curPrefs.OperatorUser
 	}
-}
-func SimpleStop(lc tailscale.LocalClient, ctx context.Context) {
-	_, err := lc.EditPrefs(ctx, &ipn.MaskedPrefs{
-		Prefs: ipn.Prefs{
-			WantRunning: false,
-		},
-		WantRunningSet: true,
-	})
-	if err != nil {
-		log.Error().Msg(err.Error())
+	tagsChanged := !reflect.DeepEqual(curPrefs.AdvertiseTags, prefs.AdvertiseTags)
+	simpleUp = curPrefs.Persist != nil &&
+		curPrefs.Persist.LoginName != "" &&
+		st.BackendState != ipn.NeedsLogin.String()
+	justEdit := st.BackendState == ipn.Running.String() && !tagsChanged
+
+	if justEdit {
+		justEditMP = new(ipn.MaskedPrefs)
+		justEditMP.WantRunningSet = true
+		justEditMP.Prefs = *prefs
+		justEditMP.ControlURLSet = true
 	}
-}
-func SavePref(lc tailscale.LocalClient, ctx context.Context) {
-	ipnPref, err := lc.GetPrefs(ctx)
-	if err != nil {
-		log.Error().Msg("Load Pref from current failed!")
-		return
-	}
-	ipn.SavePrefs(pref_path, ipnPref)
+
+	return simpleUp, justEditMP, nil
 }
 
-func LoadPref(lc tailscale.LocalClient, ctx context.Context) {
-	ipnPref, err := ipn.LoadPrefs(pref_path)
-	if err != nil {
-		log.Error().Msg("Can't read Prefs from the conf file!")
-		return
+func kickLogin() {
+	prefs := CreateDefaultPref()
+	if err := LC.CheckPrefs(ctx, prefs); err != nil {
+		logNotify("Pref出错", err)
 	}
-	maskedIPN := GetAllMaskedPref(*ipnPref)
-	_, err3 := lc.EditPrefs(ctx, &maskedIPN)
-
-	if err3 != nil {
-		log.Error().Msg("Can't update the daemon status to Prefs saved before!")
-		return
-	}
-}
-
-func logNotify(msg string, err error) {
-	log.Error().Msg(msg + err.Error())
-	beeep.Notify(app_name, msg, logo_png)
-}
-
-func StartWatcher(ctx context.Context, localClient tailscale.LocalClient, isRunning chan bool, notLogin chan bool, notAuth chan bool, errHappen chan error, doLogin chan bool, stopWatch chan bool) {
-	watchCtx, cancelWatch := context.WithCancel(ctx)
-	defer func() {
-		fmt.Println("utils-log-135")
-		cancelWatch()
-	}()
-	watcher, err := localClient.WatchIPNBus(watchCtx, 0)
-	if err != nil {
-		logNotify("守护进程通讯无法建立", err)
-		return
-	}
-	defer func() {
-		fmt.Println("utils-log-144")
-		watcher.Close()
-	}()
-
-	go func() {
-		interrupt := make(chan os.Signal, 1)
-		signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM)
-		select {
-		case <-interrupt:
-			fmt.Println("utils-log-146")
-			cancelWatch()
-		case <-watchCtx.Done():
-			fmt.Println("utils-log-149")
-		case <-stopWatch:
-			fmt.Println("utils-log-151")
-			cancelWatch()
-		}
-	}()
-
-	go func() {
-		for {
-			n, err := watcher.Next()
-			if err != nil {
-				errHappen <- err
-			}
-			if n.ErrMessage != nil {
-				msg := *n.ErrMessage
-				errHappen <- errors.New(msg)
-			}
-			if s := n.State; s != nil {
-				switch *s {
-				case ipn.NeedsLogin:
-					localClient.StartLoginInteractive(ctx)
-					notLogin <- true
-				case ipn.NeedsMachineAuth:
-					notAuth <- true
-				case ipn.Running:
-					select {
-					case isRunning <- true:
-					default:
-					}
-					cancelWatch()
-				}
-			}
-			st, _ := localClient.Status(ctx)
-			fmt.Println(st.AuthURL)
-			if url := n.BrowseToURL; url != nil && <-doLogin {
-				var loginOnce sync.Once
-				loginOnce.Do(func() { localClient.StartLoginInteractive(ctx) })
-			}
-		}
-	}()
-
-}
-
-// //
-var watchIPNArgs struct {
-	netmap  bool
-	initial bool
-}
-
-func gotPersist() {
-	var mask ipn.NotifyWatchOpt
-	if watchIPNArgs.initial {
-		mask = ipn.NotifyInitialState | ipn.NotifyInitialPrefs | ipn.NotifyInitialNetMap
-	}
-	watcher, err := LC.WatchIPNBus(ctx, mask)
-	if err != nil {
-		logNotify("测试监听失败", err)
-		return
-	}
-	defer watcher.Close()
-	fmt.Println("Connected.")
-	for {
-		n, err := watcher.Next()
-		if err != nil {
-			logNotify("读取监听失败", err)
-			return
-		}
-		if !watchIPNArgs.netmap {
-			n.NetMap = nil
-		}
-		j, _ := json.MarshalIndent(n, "", "\t")
-		fmt.Printf("%s\n", j)
+	if err := LC.Start(ctx, ipn.Options{
+		AuthKey:     "",
+		UpdatePrefs: prefs,
+	}); err != nil {
+		logNotify("无法开始", err)
 	}
 }

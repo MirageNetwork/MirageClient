@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/atotto/clipboard"
+	"github.com/gen2brain/beeep"
 	"github.com/getlantern/systray"
+	"github.com/rs/zerolog/log"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/mirage-client/resource"
 	"tailscale.com/tailcfg"
@@ -197,6 +199,10 @@ func (s *NodeListMenu) Hide() {
 }
 
 type MirageMenu struct {
+	isLogoSpin     bool
+	logoSpinChn    chan bool
+	logoSpinFinChn chan bool
+
 	loginMenu   *systray.MenuItem //登录按钮
 	connectMenu *systray.MenuItem //连接按钮
 	disconnMenu *systray.MenuItem //断开按钮
@@ -217,6 +223,10 @@ type MirageMenu struct {
 }
 
 func (s *MirageMenu) init() {
+	s.isLogoSpin = false
+	s.logoSpinChn = make(chan bool, 1)
+	s.logoSpinFinChn = make(chan bool, 1)
+
 	systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
 	systray.SetTitle("蜃境")
 	systray.SetTooltip("简单安全的组网工具")
@@ -250,6 +260,12 @@ func (s *MirageMenu) hideAll() {
 }
 
 func (s *MirageMenu) setNotLogin(version string) {
+
+	if s.isLogoSpin {
+		s.logoSpinChn <- true
+		<-s.logoSpinFinChn
+		s.isLogoSpin = false
+	}
 	systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
 
 	s.loginMenu.Enable()
@@ -271,6 +287,12 @@ func (s *MirageMenu) setNotLogin(version string) {
 }
 
 func (s *MirageMenu) setStopped(userDisplayName string, version string) {
+
+	if s.isLogoSpin {
+		s.logoSpinChn <- true
+		<-s.logoSpinFinChn
+		s.isLogoSpin = false
+	}
 	systray.SetTemplateIcon(resource.Logom, resource.Logom)
 
 	s.loginMenu.Hide()
@@ -293,6 +315,12 @@ func (s *MirageMenu) setStopped(userDisplayName string, version string) {
 }
 
 func (s *MirageMenu) setRunning(userDisplayName string, nodeHostName string, nodeMIP string, version string) {
+
+	if s.isLogoSpin {
+		s.logoSpinChn <- true
+		<-s.logoSpinFinChn
+		s.isLogoSpin = false
+	}
 	systray.SetTemplateIcon(resource.Mlogo, resource.Mlogo)
 
 	s.loginMenu.Hide()
@@ -319,10 +347,16 @@ func (s *MirageMenu) updateNodeList(st *ipnstate.Status) {
 
 }
 
-func logoSpin(stopChn chan bool, interval time.Duration) {
+func (s *MirageMenu) logoSpin(interval time.Duration) {
+
+	s.isLogoSpin = true
+	s.loginMenu.SetTitle("连接中…")
+	s.loginMenu.Disable()
+
 	for {
 		select {
-		case <-stopChn:
+		case <-s.logoSpinChn:
+			s.logoSpinFinChn <- true
 			return
 		default:
 			systray.SetTemplateIcon(resource.Mlogo1, resource.Mlogo1)
@@ -331,4 +365,9 @@ func logoSpin(stopChn chan bool, interval time.Duration) {
 			<-time.After(interval * time.Millisecond)
 		}
 	}
+}
+
+func logNotify(msg string, err error) {
+	log.Error().Msg(msg + err.Error())
+	beeep.Notify(app_name, msg, logo_png)
 }

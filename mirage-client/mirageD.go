@@ -120,6 +120,8 @@ func StartDaemon(ctx context.Context, cleanup bool, stopSignalCh chan bool) {
 		cancel()         // make srv.Run below complete
 	}()
 
+	watcherUpCh <- true // can startWatcher now
+
 	err = srv.Run(ctx, ln)
 
 	if err != nil && lbErr.Load() != nil {
