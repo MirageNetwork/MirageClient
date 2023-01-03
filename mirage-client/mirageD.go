@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/dblohm7/wingoes/com"
 	"github.com/rs/zerolog/log"
@@ -296,7 +297,22 @@ func tstunNewWithWindowsRetries(logf logger.Logf, tunName string) (_ tun.Device,
 var (
 	kernel32           = windows.NewLazySystemDLL("kernel32.dll")
 	getTickCount64Proc = kernel32.NewProc("GetTickCount64")
+	procCreateMutex    = kernel32.NewProc("CreateMutexW")
 )
+
+func CreateMutex(name string) (uintptr, error) {
+	ret, _, err := procCreateMutex.Call(
+		0,
+		0,
+		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(name))),
+	)
+	switch int(err.(syscall.Errno)) {
+	case 0:
+		return ret, nil
+	default:
+		return ret, err
+	}
+}
 
 func windowsUptime() time.Duration {
 	r, _, _ := getTickCount64Proc.Call()

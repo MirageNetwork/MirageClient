@@ -50,6 +50,11 @@ var wantRun bool
 var gui MirageMenu
 
 func main() {
+	_, err := CreateMutex("MirageWin")
+	if err != nil {
+		return
+	}
+
 	LC = tailscale.LocalClient{
 		Socket:        socket_path,
 		UseSocketOnly: false}
