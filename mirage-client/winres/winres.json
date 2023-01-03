@@ -1,0 +1,60 @@
+{
+  "RT_GROUP_ICON": {
+    "APP": {
+      "0000": [
+        "Mlogo256.png"
+      ]
+    }
+  },
+  "RT_MANIFEST": {
+    "#1": {
+      "0804": {
+        "identity": {
+          "name": "蜃境",
+          "version": "1.35.0103"
+        },
+        "description": "",
+        "minimum-os": "win7",
+        "execution-level": "administrator",
+        "ui-access": false,
+        "auto-elevate": false,
+        "dpi-awareness": "system",
+        "disable-theming": false,
+        "disable-window-filtering": false,
+        "high-resolution-scrolling-aware": false,
+        "ultra-high-resolution-scrolling-aware": false,
+        "long-path-aware": false,
+        "printer-driver-isolation": false,
+        "gdi-scaling": false,
+        "segment-heap": false,
+        "use-common-controls-v6": false
+      }
+    }
+  },
+  "RT_VERSION": {
+    "#1": {
+      "0000": {
+        "fixed": {
+          "file_version": "1.35.0.0103",
+          "product_version": "1.35.0.0103"
+        },
+        "info": {
+          "0804": {
+            "Comments": "安全组网工具",
+            "CompanyName": "吉大正元",
+            "FileDescription": "",
+            "FileVersion": "1.35.0.0103",
+            "InternalName": "Mirage",
+            "LegalCopyright": "",
+            "LegalTrademarks": "",
+            "OriginalFilename": "",
+            "PrivateBuild": "",
+            "ProductName": "蜃境",
+            "ProductVersion": "1.35.0.0103",
+            "SpecialBuild": ""
+          }
+        }
+      }
+    }
+  }
+}
