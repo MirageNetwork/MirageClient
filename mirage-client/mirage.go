@@ -112,6 +112,8 @@ func onReady() {
 				fmt.Println("退出...")
 			case <-gui.versionMenu.ClickedCh:
 				fmt.Println("you clicked version")
+			case <-gui.registerMenu.ClickedCh:
+				open.Run(adduser_url)
 			case <-gui.loginMenu.ClickedCh:
 				wantRun = true
 				if authURL != "" {
@@ -180,8 +182,8 @@ func getST() *ipnstate.Status {
 			Msg(`Get Status ERROR!`)
 		return nil
 	} else {
-		log.Info().Msg("Daemon: " + st.Version)
-		backVersion = strings.Split(st.Version, "-")[0]
+		//log.Info().Msg("Daemon: " + st.Version)
+		backVersion = "正元蜃境" + strings.Split(st.Version, "-")[0]
 		return st
 	}
 }

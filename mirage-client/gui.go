@@ -218,8 +218,9 @@ type MirageMenu struct {
 	exitNodeMenu int //TODO: 后续添加exitNode菜单
 	optionMenu   int //TODO： 后续添加配置项目菜单
 	//待添加部分完
-	versionMenu *systray.MenuItem //关于菜单：目前显示版本号
-	quitMenu    *systray.MenuItem //退出按钮
+	versionMenu  *systray.MenuItem //关于菜单：目前显示版本号
+	registerMenu *systray.MenuItem //注册用户
+	quitMenu     *systray.MenuItem //退出按钮
 }
 
 func (s *MirageMenu) init() {
@@ -242,6 +243,7 @@ func (s *MirageMenu) init() {
 	s.nodeListMenu.init()
 	systray.AddSeparator()
 	s.versionMenu = systray.AddMenuItem("", "点击查看详细信息")
+	s.registerMenu = systray.AddMenuItem("注册用户", "点击注册新用户")
 	s.quitMenu = systray.AddMenuItem("退出", "退出蜃境")
 }
 

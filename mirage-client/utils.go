@@ -14,6 +14,7 @@ import (
 var logo_png string = "./resource/Mirage_logo.png"
 var app_name string = "蜃境"
 var control_url string = "https://sdp.ipv4.uk"
+var adduser_url string = "https://sdp.ipv4.uk/addUser"
 var socket_path string = `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
 var state_path string = filepath.Join(os.Getenv("ProgramData"), "Mirage", "server-state.conf")
 var pref_path string = filepath.Join(os.Getenv("ProgramData"), "Mirage", "pref.conf")
