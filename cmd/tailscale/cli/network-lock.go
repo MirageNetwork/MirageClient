@@ -5,6 +5,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -97,6 +98,22 @@ func runNetworkLockInit(ctx context.Context, args []string) error {
 	keys, disablementValues, err := parseNLArgs(args, true, true)
 	if err != nil {
 		return err
+	}
+
+	// Common mistake: Not specifying the current node's key as one of the trusted keys.
+	foundSelfKey := false
+	for _, k := range keys {
+		keyID, err := k.ID()
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(keyID, st.PublicKey.KeyID()) {
+			foundSelfKey = true
+			break
+		}
+	}
+	if !foundSelfKey {
+		return errors.New("the tailnet lock key of the current node must be one of the trusted keys during initialization")
 	}
 
 	fmt.Println("You are initializing tailnet lock with the following trusted signing keys:")
@@ -196,7 +213,7 @@ func runNetworkLockStatus(ctx context.Context, args []string) error {
 			line.WriteString(fmt.Sprint(k.Votes))
 			line.WriteString("\t")
 			if k.Key == st.PublicKey {
-				line.WriteString("(us)")
+				line.WriteString("(self)")
 			}
 			fmt.Println(line.String())
 		}
@@ -444,8 +461,13 @@ func nlDescribeUpdate(update ipnstate.NetworkLockUpdate, color bool) (string, er
 	var stanza strings.Builder
 	printKey := func(key *tka.Key, prefix string) {
 		fmt.Fprintf(&stanza, "%sType: %s\n", prefix, key.Kind.String())
-		fmt.Fprintf(&stanza, "%sKeyID: %x\n", prefix, key.ID())
-		fmt.Fprintf(&stanza, "%sVotes: %d\n", prefix, key.Votes)
+		if keyID, err := key.ID(); err == nil {
+			fmt.Fprintf(&stanza, "%sKeyID: %x\n", prefix, keyID)
+		} else {
+			// Older versions of the client shouldn't explode when they encounter an
+			// unknown key type.
+			fmt.Fprintf(&stanza, "%sKeyID: <Error: %v>\n", prefix, err)
+		}
 		if key.Meta != nil {
 			fmt.Fprintf(&stanza, "%sMetadata: %+v\n", prefix, key.Meta)
 		}
