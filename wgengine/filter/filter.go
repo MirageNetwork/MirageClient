@@ -379,13 +379,24 @@ func (f *Filter) RunIn(q *packet.Parsed, rf RunFlags) Response {
 func (f *Filter) RunOut(q *packet.Parsed, rf RunFlags) Response {
 	dir := out
 	r := f.pre(q, rf, dir)
-	if r == Drop || r == Accept {
+	if r == Accept || r == Drop {
 		// already logged
 		return r
 	}
 	r, why := f.runOut(q)
 	f.logRateLimit(rf, q, dir, r, why)
 	return r
+}
+
+var unknownProtoStringCache sync.Map // ipproto.Proto -> string
+
+func unknownProtoString(proto ipproto.Proto) string {
+	if v, ok := unknownProtoStringCache.Load(proto); ok {
+		return v.(string)
+	}
+	s := fmt.Sprintf("unknown-protocol-%d", proto)
+	unknownProtoStringCache.Store(proto, s)
+	return s
 }
 
 func (f *Filter) runIn4(q *packet.Parsed) (r Response, why string) {
@@ -441,9 +452,9 @@ func (f *Filter) runIn4(q *packet.Parsed) (r Response, why string) {
 		return Accept, "tsmp ok"
 	default:
 		if f.matches4.matchProtoAndIPsOnlyIfAllPorts(q) {
-			return Accept, "otherproto ok"
+			return Accept, "other-portless ok"
 		}
-		return Drop, "Unknown proto"
+		return Drop, unknownProtoString(q.IPProto)
 	}
 	return Drop, "no rules matched"
 }
@@ -501,9 +512,9 @@ func (f *Filter) runIn6(q *packet.Parsed) (r Response, why string) {
 		return Accept, "tsmp ok"
 	default:
 		if f.matches6.matchProtoAndIPsOnlyIfAllPorts(q) {
-			return Accept, "otherproto ok"
+			return Accept, "other-portless ok"
 		}
-		return Drop, "Unknown proto"
+		return Drop, unknownProtoString(q.IPProto)
 	}
 	return Drop, "no rules matched"
 }
@@ -566,12 +577,7 @@ func (f *Filter) pre(q *packet.Parsed, rf RunFlags, dir direction) Response {
 		return Drop
 	}
 
-	switch q.IPProto {
-	case ipproto.Unknown:
-		// Unknown packets are dangerous; always drop them.
-		f.logRateLimit(rf, q, dir, Drop, "unknown")
-		return Drop
-	case ipproto.Fragment:
+	if q.IPProto == ipproto.Fragment {
 		// Fragments after the first always need to be passed through.
 		// Very small fragments are considered Junk by Parsed.
 		f.logRateLimit(rf, q, dir, Accept, "fragment")
