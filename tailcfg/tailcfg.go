@@ -92,7 +92,10 @@ type CapabilityVersion int
 //   - 52: 2023-01-05: client can handle c2n POST /logtail/flush
 //   - 53: 2023-01-18: client respects explicit Node.Expired + auto-sets based on Node.KeyExpiry
 //   - 54: 2023-01-19: Node.Cap added, PeersChangedPatch.Cap, uses Node.Cap for ExitDNS before Hostinfo.Services fallback
-const CurrentCapabilityVersion CapabilityVersion = 54
+//   - 55: 2023-01-23: start of c2n GET+POST /update handler
+//   - 56: 2023-01-24: Client understands CapabilityDebugTSDNSResolution
+//   - 57: 2023-01-25: Client understands CapabilityBindToInterfaceByRoute
+const CurrentCapabilityVersion CapabilityVersion = 57
 
 type StableID string
 
@@ -528,6 +531,7 @@ type Hostinfo struct {
 	ShareeNode      bool           `json:",omitempty"` // indicates this node exists in netmap because it's owned by a shared-to user
 	NoLogsNoSupport bool           `json:",omitempty"` // indicates that the user has opted out of sending logs and support
 	WireIngress     bool           `json:",omitempty"` // indicates that the node wants the option to receive ingress connections
+	AllowsUpdate    bool           `json:",omitempty"` // indicates that the node has opted-in to admin-console-drive remote updates
 	Machine         string         `json:",omitempty"` // the current host's machine type (uname -m)
 	GoArch          string         `json:",omitempty"` // GOARCH value (of the built binary)
 	GoArchVar       string         `json:",omitempty"` // GOARM, GOAMD64, etc (of the built binary)
@@ -1723,6 +1727,11 @@ const (
 	CapabilityDataPlaneAuditLogs = "https://tailscale.com/cap/data-plane-audit-logs" // feature enabled
 	CapabilityDebug              = "https://tailscale.com/cap/debug"                 // exposes debug endpoints over the PeerAPI
 
+	// CapabilityBindToInterfaceByRoute changes how Darwin nodes create
+	// sockets (in the net/netns package). See that package for more
+	// details on the behaviour of this capability.
+	CapabilityBindToInterfaceByRoute = "https://tailscale.com/cap/bind-to-interface-by-route"
+
 	// CapabilityTailnetLockAlpha indicates the node is in the tailnet lock alpha,
 	// and initialization of tailnet lock may proceed.
 	//
@@ -1744,6 +1753,9 @@ const (
 	CapabilityWakeOnLAN = "https://tailscale.com/cap/wake-on-lan"
 	// CapabilityIngress grants the ability for a peer to send ingress traffic.
 	CapabilityIngress = "https://tailscale.com/cap/ingress"
+	// CapabilitySSHSessionHaul grants the ability to receive SSH session logs
+	// from a peer.
+	CapabilitySSHSessionHaul = "https://tailscale.com/cap/ssh-session-haul"
 
 	// Funnel warning capabilities used for reporting errors to the user.
 
@@ -1752,11 +1764,20 @@ const (
 
 	// CapabilityWarnFunnelNoHTTPS indicates HTTPS has not been enabled for the tailnet.
 	CapabilityWarnFunnelNoHTTPS = "https://tailscale.com/cap/warn-funnel-no-https"
+
+	// Debug logging capabilities
+
+	// CapabilityDebugTSDNSResolution enables verbose debug logging for DNS
+	// resolution for Tailscale-controlled domains (the control server, log
+	// server, DERP servers, etc.)
+	CapabilityDebugTSDNSResolution = "https://tailscale.com/cap/debug-ts-dns-resolution"
 )
 
 const (
 	// NodeAttrFunnel grants the ability for a node to host ingress traffic.
 	NodeAttrFunnel = "funnel"
+	// NodeAttrSSHAggregator grants the ability for a node to collect SSH sessions.
+	NodeAttrSSHAggregator = "ssh-aggregator"
 )
 
 // SetDNSRequest is a request to add a DNS record.
@@ -1930,6 +1951,10 @@ type SSHAction struct {
 	// AllowLocalPortForwarding, if true, allows accepted connections
 	// to use local port forwarding if requested.
 	AllowLocalPortForwarding bool `json:"allowLocalPortForwarding,omitempty"`
+
+	// SessionHaulTargetNode, if non-empty, is the Stable ID of a peer to
+	// stream this SSH session's logs to.
+	SessionHaulTargetNode StableNodeID `json:"sessionHaulTargetNode,omitempty"`
 }
 
 // OverTLSPublicKeyResponse is the JSON response to /key?v=<n>

@@ -43,6 +43,7 @@ import (
 	"tailscale.com/types/logger"
 	"tailscale.com/types/ptr"
 	"tailscale.com/util/clientmetric"
+	"tailscale.com/util/httpm"
 	"tailscale.com/util/mak"
 	"tailscale.com/util/strs"
 	"tailscale.com/version"
@@ -1065,6 +1066,10 @@ func (h *Handler) serveDERPMap(w http.ResponseWriter, r *http.Request) {
 // serveSetExpirySooner sets the expiry date on the current machine, specified
 // by an `expiry` unix timestamp as POST or query param.
 func (h *Handler) serveSetExpirySooner(w http.ResponseWriter, r *http.Request) {
+	if !h.PermitWrite {
+		http.Error(w, "access denied", http.StatusForbidden)
+		return
+	}
 	if r.Method != "POST" {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return
@@ -1231,7 +1236,7 @@ func (h *Handler) serveTKAStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "lock status access denied", http.StatusForbidden)
 		return
 	}
-	if r.Method != http.MethodGet {
+	if r.Method != httpm.GET {
 		http.Error(w, "use GET", http.StatusMethodNotAllowed)
 		return
 	}
@@ -1250,7 +1255,7 @@ func (h *Handler) serveTKASign(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "lock status access denied", http.StatusForbidden)
 		return
 	}
-	if r.Method != http.MethodPost {
+	if r.Method != httpm.POST {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
 		return
 	}
@@ -1278,7 +1283,7 @@ func (h *Handler) serveTKAInit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "lock init access denied", http.StatusForbidden)
 		return
 	}
-	if r.Method != http.MethodPost {
+	if r.Method != httpm.POST {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
 		return
 	}
@@ -1313,7 +1318,7 @@ func (h *Handler) serveTKAModify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "network-lock modify access denied", http.StatusForbidden)
 		return
 	}
-	if r.Method != http.MethodPost {
+	if r.Method != httpm.POST {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
 		return
 	}
@@ -1340,7 +1345,7 @@ func (h *Handler) serveTKADisable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "network-lock modify access denied", http.StatusForbidden)
 		return
 	}
-	if r.Method != http.MethodPost {
+	if r.Method != httpm.POST {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
 		return
 	}
@@ -1364,7 +1369,7 @@ func (h *Handler) serveTKALocalDisable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "network-lock modify access denied", http.StatusForbidden)
 		return
 	}
-	if r.Method != http.MethodPost {
+	if r.Method != httpm.POST {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
 		return
 	}
@@ -1384,7 +1389,7 @@ func (h *Handler) serveTKALocalDisable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serveTKALog(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != httpm.GET {
 		http.Error(w, "use GET", http.StatusMethodNotAllowed)
 		return
 	}
@@ -1435,10 +1440,10 @@ func (h *Handler) serveProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 	if suffix == "" {
 		switch r.Method {
-		case http.MethodGet:
+		case httpm.GET:
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(h.b.ListProfiles())
-		case http.MethodPut:
+		case httpm.PUT:
 			err := h.b.NewProfile()
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1457,7 +1462,7 @@ func (h *Handler) serveProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 	if suffix == "current" {
 		switch r.Method {
-		case http.MethodGet:
+		case httpm.GET:
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(h.b.CurrentProfile())
 		default:
@@ -1468,7 +1473,7 @@ func (h *Handler) serveProfiles(w http.ResponseWriter, r *http.Request) {
 
 	profileID := ipn.ProfileID(suffix)
 	switch r.Method {
-	case http.MethodGet:
+	case httpm.GET:
 		profiles := h.b.ListProfiles()
 		profileIndex := slices.IndexFunc(profiles, func(p ipn.LoginProfile) bool {
 			return p.ID == profileID
@@ -1479,14 +1484,14 @@ func (h *Handler) serveProfiles(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(profiles[profileIndex])
-	case http.MethodPost:
+	case httpm.POST:
 		err := h.b.SwitchProfile(profileID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-	case http.MethodDelete:
+	case httpm.DELETE:
 		err := h.b.DeleteProfile(profileID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

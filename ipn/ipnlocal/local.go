@@ -5,6 +5,7 @@
 package ipnlocal
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -43,8 +45,10 @@ import (
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/ipn/policy"
 	"tailscale.com/net/dns"
+	"tailscale.com/net/dnscache"
 	"tailscale.com/net/dnsfallback"
 	"tailscale.com/net/interfaces"
+	"tailscale.com/net/netns"
 	"tailscale.com/net/netutil"
 	"tailscale.com/net/tsaddr"
 	"tailscale.com/net/tsdial"
@@ -723,6 +727,10 @@ func peerStatusFromNode(ps *ipnstate.PeerStatus, n *tailcfg.Node) {
 	if n.Expired {
 		ps.Expired = true
 	}
+	if t := n.KeyExpiry; !t.IsZero() {
+		t = t.Round(time.Second)
+		ps.KeyExpiry = &t
+	}
 }
 
 // WhoIs reports the node and user who owns the node with the given IP:port.
@@ -845,6 +853,13 @@ func (b *LocalBackend) setClientStatus(st controlclient.Status) {
 			}
 			if nextExpiry.IsZero() || peer.KeyExpiry.Before(nextExpiry) {
 				nextExpiry = peer.KeyExpiry
+			}
+		}
+
+		// Ensure that we also fire this timer if our own node key expires.
+		if st.NetMap.SelfNode != nil {
+			if selfExpiry := st.NetMap.SelfNode.KeyExpiry; !selfExpiry.IsZero() && selfExpiry.Before(nextExpiry) {
+				nextExpiry = selfExpiry
 			}
 		}
 
@@ -2484,6 +2499,7 @@ func (b *LocalBackend) checkSSHPrefsLocked(p *ipn.Prefs) error {
 		if distro.Get() == distro.QNAP && !envknob.UseWIPCode() {
 			return errors.New("The Tailscale SSH server does not run on QNAP.")
 		}
+		checkSELinux()
 		// otherwise okay
 	case "darwin":
 		// okay only in tailscaled mode for now.
@@ -3806,6 +3822,11 @@ func (b *LocalBackend) setNetMapLocked(nm *netmap.NetworkMap) {
 	}
 	b.capFileSharing = fs
 
+	b.setDebugLogsByCapabilityLocked(nm)
+
+	// See the netns package for documentation on what this capability does.
+	netns.SetBindToInterfaceByRoute(hasCapability(nm, tailcfg.CapabilityBindToInterfaceByRoute))
+
 	b.setTCPPortsInterceptedFromNetmapAndPrefsLocked(b.pm.CurrentPrefs())
 	if nm == nil {
 		b.nodeByAddr = nil
@@ -3838,6 +3859,18 @@ func (b *LocalBackend) setNetMapLocked(nm *netmap.NetworkMap) {
 		if v == nil {
 			delete(b.nodeByAddr, k)
 		}
+	}
+}
+
+// setDebugLogsByCapabilityLocked sets debug logging based on the self node's
+// capabilities in the provided NetMap.
+func (b *LocalBackend) setDebugLogsByCapabilityLocked(nm *netmap.NetworkMap) {
+	// These are sufficiently cheap (atomic bools) that we don't need to
+	// store state and compare.
+	if hasCapability(nm, tailcfg.CapabilityDebugTSDNSResolution) {
+		dnscache.SetDebugLoggingEnabled(true)
+	} else {
+		dnscache.SetDebugLoggingEnabled(false)
 	}
 }
 
@@ -4497,11 +4530,26 @@ func (b *LocalBackend) sshServerOrInit() (_ SSHServer, err error) {
 	return b.sshServer, nil
 }
 
+var warnSSHSELinux = health.NewWarnable()
+
+func checkSELinux() {
+	if runtime.GOOS != "linux" {
+		return
+	}
+	out, _ := exec.Command("getenforce").Output()
+	if string(bytes.TrimSpace(out)) == "Enforcing" {
+		warnSSHSELinux.Set(errors.New("SELinux is enabled; Tailscale SSH may not work. See https://tailscale.com/s/ssh-selinux"))
+	} else {
+		warnSSHSELinux.Set(nil)
+	}
+}
+
 func (b *LocalBackend) HandleSSHConn(c net.Conn) (err error) {
 	s, err := b.sshServerOrInit()
 	if err != nil {
 		return err
 	}
+	checkSELinux()
 	return s.HandleSSHConn(c)
 }
 
