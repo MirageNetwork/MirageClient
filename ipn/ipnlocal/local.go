@@ -1,6 +1,5 @@
-// Copyright (c) 2020 Tailscale Inc & AUTHORS All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) Tailscale Inc & AUTHORS
+// SPDX-License-Identifier: BSD-3-Clause
 
 package ipnlocal
 
@@ -2146,6 +2145,20 @@ func (b *LocalBackend) initMachineKeyLocked() (err error) {
 	}
 
 	b.logf("machine key written to store")
+	return nil
+}
+
+// clearMachineKeyLocked is called to clear the persisted and in-memory
+// machine key, so that initMachineKeyLocked (called as part of starting)
+// generates a new machine key.
+//
+// b.mu must be held.
+func (b *LocalBackend) clearMachineKeyLocked() error {
+	if err := b.store.WriteState(ipn.MachineKeyStateKey, nil); err != nil {
+		return err
+	}
+	b.machinePrivKey = key.MachinePrivate{}
+	b.logf("machine key cleared")
 	return nil
 }
 
@@ -4759,4 +4772,22 @@ func (b *LocalBackend) ListProfiles() []ipn.LoginProfile {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.pm.Profiles()
+}
+
+// ResetAuth resets the authentication state, including persisted keys. Also
+// has the side effect of removing all profiles and reseting preferences. The
+// backend is left with a new profile, ready for StartLoginInterative to be
+// called to register it as new node.
+func (b *LocalBackend) ResetAuth() error {
+	b.mu.Lock()
+	b.resetControlClientLockedAsync()
+	if err := b.clearMachineKeyLocked(); err != nil {
+		b.mu.Unlock()
+		return err
+	}
+	if err := b.pm.DeleteAllProfiles(); err != nil {
+		b.mu.Unlock()
+		return err
+	}
+	return b.resetForProfileChangeLockedOnEntry()
 }

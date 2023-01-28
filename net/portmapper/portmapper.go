@@ -1,6 +1,5 @@
-// Copyright (c) 2021 Tailscale Inc & AUTHORS All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) Tailscale Inc & AUTHORS
+// SPDX-License-Identifier: BSD-3-Clause
 
 // Package portmapper is a UDP port mapping client. It currently allows for mapping over
 // NAT-PMP, UPnP, and PCP.
@@ -587,7 +586,7 @@ func (c *Client) createOrGetMapping(ctx context.Context) (external netip.AddrPor
 	}
 }
 
-//go:generate go run tailscale.com/cmd/addlicense -year 2021 -file pmpresultcode_string.go go run golang.org/x/tools/cmd/stringer -type=pmpResultCode -trimprefix=pmpCode
+//go:generate go run tailscale.com/cmd/addlicense -file pmpresultcode_string.go go run golang.org/x/tools/cmd/stringer -type=pmpResultCode -trimprefix=pmpCode
 
 type pmpResultCode uint16
 

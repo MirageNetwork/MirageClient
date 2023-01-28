@@ -1,6 +1,5 @@
-// Copyright (c) 2020 Tailscale Inc & AUTHORS All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) Tailscale Inc & AUTHORS
+// SPDX-License-Identifier: BSD-3-Clause
 
 // Cloner is a tool to automate the creation of a Clone method.
 //
@@ -80,7 +79,7 @@ func main() {
 		w("}")
 	}
 	cloneOutput := pkg.Name + "_clone.go"
-	if err := codegen.WritePackageFile("tailscale.com/cmd/cloner", pkg, cloneOutput, codegen.CopyrightYear("."), it, buf); err != nil {
+	if err := codegen.WritePackageFile("tailscale.com/cmd/cloner", pkg, cloneOutput, it, buf); err != nil {
 		log.Fatal(err)
 	}
 }

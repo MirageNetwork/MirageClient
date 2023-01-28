@@ -1,6 +1,5 @@
-// Copyright (c) 2021 Tailscale Inc & AUTHORS All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) Tailscale Inc & AUTHORS
+// SPDX-License-Identifier: BSD-3-Clause
 
 // Package localapi contains the HTTP server handlers for tailscaled's API server.
 package localapi
@@ -84,6 +83,7 @@ var handler = map[string]localAPIHandler{
 	"ping":                        (*Handler).servePing,
 	"prefs":                       (*Handler).servePrefs,
 	"pprof":                       (*Handler).servePprof,
+	"reset-auth":                  (*Handler).serveResetAuth,
 	"serve-config":                (*Handler).serveServeConfig,
 	"set-dns":                     (*Handler).serveSetDNS,
 	"set-expiry-sooner":           (*Handler).serveSetExpirySooner,
@@ -620,6 +620,23 @@ func (h *Handler) servePprof(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	servePprofFunc(w, r)
+}
+
+func (h *Handler) serveResetAuth(w http.ResponseWriter, r *http.Request) {
+	if !h.PermitWrite {
+		http.Error(w, "reset-auth modify access denied", http.StatusForbidden)
+		return
+	}
+	if r.Method != httpm.POST {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := h.b.ResetAuth(); err != nil {
+		http.Error(w, "reset-auth failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) serveServeConfig(w http.ResponseWriter, r *http.Request) {
