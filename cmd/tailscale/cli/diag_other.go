@@ -11,5 +11,5 @@ import "fmt"
 // so just don't diagnose connect failures.
 
 func fixTailscaledConnectError(origErr error) error {
-	return fmt.Errorf("failed to connect to local tailscaled process (is it running?); got: %w", origErr)
+	return fmt.Errorf("failed to connect to local miraged process (is it running?); got: %w", origErr)
 }

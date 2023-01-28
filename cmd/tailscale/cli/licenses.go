@@ -35,8 +35,8 @@ func licensesURL() string {
 func runLicenses(ctx context.Context, args []string) error {
 	licenses := licensesURL()
 	outln(`
-Tailscale wouldn't be possible without the contributions of thousands of open
-source developers. To see the open source packages included in Tailscale and
+Mirage wouldn't be possible without the contributions of thousands of open
+source developers. To see the open source packages included in Mirage and
 their respective license information, visit:
 
     ` + licenses)

@@ -25,24 +25,24 @@ func DefaultTailscaledSocket() string {
 		return `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
 	}
 	if runtime.GOOS == "darwin" {
-		return "/var/run/tailscaled.socket"
+		return "/var/run/miraged.socket"
 	}
 	switch distro.Get() {
 	case distro.Synology:
 		if distro.DSMVersion() == 6 {
-			return "/var/packages/Tailscale/etc/tailscaled.sock"
+			return "/var/packages/Mirage/etc/miraged.sock"
 		}
 		// DSM 7 (and higher? or failure to detect.)
-		return "/var/packages/Tailscale/var/tailscaled.sock"
+		return "/var/packages/Mirage/var/miraged.sock"
 	case distro.Gokrazy:
-		return "/perm/tailscaled/tailscaled.sock"
+		return "/perm/miraged/miraged.sock"
 	case distro.QNAP:
-		return "/tmp/tailscale/tailscaled.sock"
+		return "/tmp/mirage/miraged.sock"
 	}
 	if fi, err := os.Stat("/var/run"); err == nil && fi.IsDir() {
-		return "/var/run/tailscale/tailscaled.sock"
+		return "/var/run/mirage/miraged.sock"
 	}
-	return "tailscaled.sock"
+	return "miraged.sock"
 }
 
 var stateFileFunc func() string
@@ -55,7 +55,7 @@ func DefaultTailscaledStateFile() string {
 		return f()
 	}
 	if runtime.GOOS == "windows" {
-		return filepath.Join(os.Getenv("ProgramData"), "Tailscale", "server-state.conf")
+		return filepath.Join(os.Getenv("ProgramData"), "Mirage", "server-state.conf")
 	}
 	return ""
 }

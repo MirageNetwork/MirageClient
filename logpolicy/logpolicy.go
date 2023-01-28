@@ -205,7 +205,7 @@ func logsDir(logf logger.Logf) string {
 
 	switch runtime.GOOS {
 	case "windows":
-		if version.CmdName() == "tailscaled" {
+		if version.CmdName() == "miraged" {
 			// In the common case, when tailscaled is run as the Local System (as a service),
 			// we want to use %ProgramData% (C:\ProgramData\Tailscale), aside the
 			// system state config with the machine key, etc. But if that directory's
@@ -243,7 +243,7 @@ func logsDir(logf logger.Logf) string {
 
 	cacheDir, err := os.UserCacheDir()
 	if err == nil {
-		d := filepath.Join(cacheDir, "Tailscale")
+		d := filepath.Join(cacheDir, "Mirage")
 		logf("logpolicy: using UserCacheDir, %q", d)
 		return d
 	}
@@ -259,7 +259,7 @@ func logsDir(logf logger.Logf) string {
 	// No idea where to put stuff. Try to create a temp dir. It'll
 	// mean we might lose some logs and rotate through log IDs, but
 	// it's something.
-	tmp, err := os.MkdirTemp("", "tailscaled-log-*")
+	tmp, err := os.MkdirTemp("", "miraged-log-*")
 	if err != nil {
 		panic("no safe place found to store log state")
 	}
@@ -386,7 +386,7 @@ func tryFixLogStateLocation(dir, cmdname string) {
 	existsInCache := false
 	cacheDir := os.Getenv("CACHE_DIRECTORY")
 	if cacheDir != "" {
-		existsInCache, err = checkExists("/var/cache/tailscale")
+		existsInCache, err = checkExists("/var/cache/mirage")
 		if err != nil {
 			log.Printf("checking for configs in %s: %v", cacheDir, err)
 		}
@@ -490,7 +490,7 @@ func NewWithConfigPath(collection, dir, cmdName string) *Policy {
 
 	if runtime.GOOS == "windows" {
 		switch cmdName {
-		case "tailscaled":
+		case "miraged":
 			// Tailscale 1.14 and before stored state under %LocalAppData%
 			// (usually "C:\WINDOWS\system32\config\systemprofile\AppData\Local"
 			// when tailscaled.exe is running as a non-user system service).
@@ -505,20 +505,20 @@ func NewWithConfigPath(collection, dir, cmdName string) *Policy {
 			// %LocalAppData%\tailscaled.log.conf
 			//
 			// Attempt to migrate the log conf to C:\ProgramData\Tailscale
-			oldDir := filepath.Join(os.Getenv("LocalAppData"), "Tailscale")
+			oldDir := filepath.Join(os.Getenv("LocalAppData"), "Mirage")
 
-			oldPath := filepath.Join(oldDir, "tailscaled.log.conf")
+			oldPath := filepath.Join(oldDir, "miraged.log.conf")
 			if fi, err := os.Stat(oldPath); err != nil || !fi.Mode().IsRegular() {
 				// *Only* if tailscaled.log.conf does not exist,
 				// check for tailscale-ipn.log.conf
-				oldPathOldCmd := filepath.Join(oldDir, "tailscale-ipn.log.conf")
+				oldPathOldCmd := filepath.Join(oldDir, "mirage-ipn.log.conf")
 				if fi, err := os.Stat(oldPathOldCmd); err == nil && fi.Mode().IsRegular() {
 					oldPath = oldPathOldCmd
 				}
 			}
 
 			cfgPath = paths.TryConfigFileMigration(earlyLogf, oldPath, cfgPath)
-		case "tailscale-ipn":
+		case "mirage-ipn":
 			for _, oldBase := range []string{"wg64.log.conf", "wg32.log.conf"} {
 				oldConf := filepath.Join(dir, oldBase)
 				if fi, err := os.Stat(oldConf); err == nil && fi.Mode().IsRegular() {
@@ -561,10 +561,10 @@ func NewWithConfigPath(collection, dir, cmdName string) *Policy {
 	}
 
 	if envknob.NoLogsNoSupport() {
-		log.Println("You have disabled logging. Tailscale will not be able to provide support.")
+		log.Println("You have disabled logging. Mirage will not be able to provide support.")
 		conf.HTTPC = &http.Client{Transport: noopPretendSuccessTransport{}}
 	} else if val := getLogTarget(); val != "" {
-		log.Println("You have enabled a non-default log target. Doing without being told to by Tailscale staff or your network administrator will make getting support difficult.")
+		log.Println("You have enabled a non-default log target. Doing without being told to by Mirage staff or your network administrator will make getting support difficult.")
 		conf.BaseURL = val
 		u, _ := url.Parse(val)
 		conf.HTTPC = &http.Client{Transport: NewLogtailTransport(u.Host)}
@@ -578,7 +578,7 @@ func NewWithConfigPath(collection, dir, cmdName string) *Policy {
 	// NAS disks cannot hibernate if we're writing logs to them all the time.
 	// https://github.com/tailscale/tailscale/issues/3551
 	if runtime.GOOS == "linux" && (distro.Get() == distro.Synology || distro.Get() == distro.QNAP) {
-		tmpfsLogs := "/tmp/tailscale-logs"
+		tmpfsLogs := "/tmp/mirage-logs"
 		if err := os.MkdirAll(tmpfsLogs, 0755); err == nil {
 			filchPrefix = filepath.Join(tmpfsLogs, cmdName)
 			filchOptions.MaxFileSize = 1 << 20
@@ -602,8 +602,8 @@ func NewWithConfigPath(collection, dir, cmdName string) *Policy {
 	if runtime.GOOS == "windows" && conf.Collection == logtail.CollectionNode {
 		logID := newc.PublicID.String()
 		exe, _ := os.Executable()
-		if strings.EqualFold(filepath.Base(exe), "tailscaled.exe") {
-			diskLogf := filelogger.New("tailscale-service", logID, lw.Logf)
+		if strings.EqualFold(filepath.Base(exe), "miraged.exe") {
+			diskLogf := filelogger.New("mirage-service", logID, lw.Logf)
 			logOutput = logger.FuncWriter(diskLogf)
 		}
 	}
@@ -708,10 +708,10 @@ func NewLogtailTransport(host string) *http.Transport {
 					err = errors.New(res.Status)
 				}
 				if err != nil {
-					log.Printf("logtail: CONNECT response error from tailscaled: %v", err)
+					log.Printf("logtail: CONNECT response error from miraged: %v", err)
 					c.Close()
 				} else {
-					dialLog.Printf("connected via tailscaled")
+					dialLog.Printf("connected via miraged")
 					return c, nil
 				}
 			}

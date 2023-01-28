@@ -58,7 +58,7 @@ func runCert(ctx context.Context, args []string) error {
 						return
 					}
 				}
-				fmt.Fprintf(w, "<h1>Hello from Tailscale</h1>It works.")
+				fmt.Fprintf(w, "<h1>Hello from Mirage</h1>It works.")
 			}),
 		}
 		switch len(args) {
@@ -78,7 +78,7 @@ func runCert(ctx context.Context, args []string) error {
 		var hint bytes.Buffer
 		if st, err := localClient.Status(ctx); err == nil {
 			if st.BackendState != ipn.Running.String() {
-				fmt.Fprintf(&hint, "\nTailscale is not running.\n")
+				fmt.Fprintf(&hint, "\nMirage is not running.\n")
 			} else if len(st.CertDomains) == 0 {
 				fmt.Fprintf(&hint, "\nHTTPS cert support is not enabled/configured for your tailnet.\n")
 			} else if len(st.CertDomains) == 1 {
@@ -87,7 +87,7 @@ func runCert(ctx context.Context, args []string) error {
 				fmt.Fprintf(&hint, "\nValid domain options: %q.\n", st.CertDomains)
 			}
 		}
-		return fmt.Errorf("Usage: tailscale cert [flags] <domain>%s", hint.Bytes())
+		return fmt.Errorf("Usage: mirage cert [flags] <domain>%s", hint.Bytes())
 	}
 	domain := args[0]
 

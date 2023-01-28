@@ -65,14 +65,14 @@ type tmplData struct {
 var webCmd = &ffcli.Command{
 	Name:       "web",
 	ShortUsage: "web [flags]",
-	ShortHelp:  "Run a web server for controlling Tailscale",
+	ShortHelp:  "Run a web server for controlling Mirage",
 
 	LongHelp: strings.TrimSpace(`
-"tailscale web" runs a webserver for controlling the Tailscale daemon.
+"mirage web" runs a webserver for controlling the Mirage daemon.
 
 It's primarily intended for use on Synology, QNAP, and other
 NAS devices where a web interface is the natural place to control
-Tailscale, as opposed to a CLI or a native app.
+Mirage, as opposed to a CLI or a native app.
 `),
 
 	FlagSet: (func() *flag.FlagSet {
@@ -119,7 +119,7 @@ func runWeb(ctx context.Context, args []string) error {
 
 	if webArgs.cgi {
 		if err := cgi.Serve(http.HandlerFunc(webHandler)); err != nil {
-			log.Printf("tailscale.cgi: %v", err)
+			log.Printf("mirage.cgi: %v", err)
 			return err
 		}
 		return nil
@@ -386,9 +386,9 @@ func webHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		log.Printf("tailscaleUp(reauth=%v) ...", postData.Reauthenticate)
+		log.Printf("mirageUp(reauth=%v) ...", postData.Reauthenticate)
 		url, err := tailscaleUp(r.Context(), st, postData.Reauthenticate)
-		log.Printf("tailscaleUp = (URL %v, %v)", url != "", err)
+		log.Printf("mirageUp = (URL %v, %v)", url != "", err)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(mi{"error": err.Error()})
