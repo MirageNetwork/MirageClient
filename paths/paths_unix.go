@@ -22,11 +22,11 @@ func init() {
 func statePath() string {
 	switch runtime.GOOS {
 	case "linux":
-		return "/var/lib/tailscale/tailscaled.state"
+		return "/var/lib/mirage/miraged.state"
 	case "freebsd", "openbsd":
-		return "/var/db/tailscale/tailscaled.state"
+		return "/var/db/mirage/miraged.state"
 	case "darwin":
-		return "/Library/Tailscale/tailscaled.state"
+		return "/Library/Mirage/miraged.state"
 	default:
 		return ""
 	}
@@ -34,7 +34,7 @@ func statePath() string {
 
 func stateFileUnix() string {
 	if distro.Get() == distro.Gokrazy {
-		return "/perm/tailscaled/tailscaled.state"
+		return "/perm/miraged/miraged.state"
 	}
 	path := statePath()
 	if path == "" {
@@ -55,7 +55,7 @@ func stateFileUnix() string {
 	}
 
 	// For non-root users, fall back to $XDG_DATA_HOME/tailscale/*.
-	return filepath.Join(xdgDataHome(), "tailscale", "tailscaled.state")
+	return filepath.Join(xdgDataHome(), "mirage", "miraged.state")
 }
 
 func xdgDataHome() string {
@@ -66,7 +66,7 @@ func xdgDataHome() string {
 }
 
 func ensureStateDirPerms(dir string) error {
-	if filepath.Base(dir) != "tailscale" {
+	if filepath.Base(dir) != "mirage" {
 		return nil
 	}
 	fi, err := os.Stat(dir)

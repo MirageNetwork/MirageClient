@@ -78,7 +78,7 @@ func defaultTunName() string {
 		case distro.Synology:
 			// Try TUN, but fall back to userspace networking if needed.
 			// See https://github.com/tailscale/tailscale-synology/issues/35
-			return "tailscale0,userspace-networking"
+			return "mirage0,userspace-networking"
 		case distro.Gokrazy:
 			// Gokrazy doesn't yet work in tun mode because the whole
 			// Gokrazy thing is no C code, and Tailscale currently
@@ -96,7 +96,7 @@ func defaultTunName() string {
 		}
 
 	}
-	return "tailscale0"
+	return "mirage0"
 }
 
 // defaultPort returns the default UDP port to listen on for disco+wireguard.
@@ -162,14 +162,14 @@ func main() {
 	flag.StringVar(&args.httpProxyAddr, "outbound-http-proxy-listen", "", `optional [ip]:port to run an outbound HTTP proxy (e.g. "localhost:8080")`)
 	flag.StringVar(&args.tunname, "tun", defaultTunName(), `tunnel interface name; use "userspace-networking" (beta) to not use TUN`)
 	flag.Var(flagtype.PortValue(&args.port, defaultPort()), "port", "UDP port to listen on for WireGuard and peer-to-peer traffic; 0 means automatically select")
-	flag.StringVar(&args.statepath, "state", "", "absolute path of state file; use 'kube:<secret-name>' to use Kubernetes secrets or 'arn:aws:ssm:...' to store in AWS SSM; use 'mem:' to not store state and register as an ephemeral node. If empty and --statedir is provided, the default is <statedir>/tailscaled.state. Default: "+paths.DefaultTailscaledStateFile())
+	flag.StringVar(&args.statepath, "state", "", "absolute path of state file; use 'kube:<secret-name>' to use Kubernetes secrets or 'arn:aws:ssm:...' to store in AWS SSM; use 'mem:' to not store state and register as an ephemeral node. If empty and --statedir is provided, the default is <statedir>/miraged.state. Default: "+paths.DefaultTailscaledStateFile())
 	flag.StringVar(&args.statedir, "statedir", "", "path to directory for storage of config state, TLS certs, temporary incoming Taildrop files, etc. If empty, it's derived from --state when possible.")
 	flag.StringVar(&args.socketpath, "socket", paths.DefaultTailscaledSocket(), "path of the service unix socket")
 	flag.StringVar(&args.birdSocketPath, "bird-socket", "", "path of the bird unix socket")
 	flag.BoolVar(&printVersion, "version", false, "print version information and exit")
-	flag.BoolVar(&args.disableLogs, "no-logs-no-support", true, "disable log uploads; this also disables any technical support")
+	//	flag.BoolVar(&args.disableLogs, "no-logs-no-support", true, "disable log uploads; this also disables any technical support")
 
-	if len(os.Args) > 0 && filepath.Base(os.Args[0]) == "tailscale" && beCLI != nil {
+	if len(os.Args) > 0 && filepath.Base(os.Args[0]) == "mirage" && beCLI != nil {
 		beCLI()
 		return
 	}
@@ -193,7 +193,7 @@ func main() {
 	if flag.NArg() > 0 {
 		// Windows subprocess is spawned with /subprocess, so we need to avoid this check there.
 		if runtime.GOOS != "windows" || (flag.Arg(0) != "/subproc" && flag.Arg(0) != "/firewall") {
-			log.Fatalf("tailscaled does not take non-flag arguments: %q", flag.Args())
+			log.Fatalf("miraged does not take non-flag arguments: %q", flag.Args())
 		}
 	}
 
@@ -204,7 +204,7 @@ func main() {
 
 	if runtime.GOOS == "darwin" && os.Getuid() != 0 && !strings.Contains(args.tunname, "userspace-networking") && !args.cleanup {
 		log.SetFlags(0)
-		log.Fatalf("tailscaled requires root; use sudo tailscaled (or use --tun=userspace-networking)")
+		log.Fatalf("miraged requires root; use sudo miraged (or use --tun=userspace-networking)")
 	}
 
 	if args.socketpath == "" && runtime.GOOS != "windows" {
@@ -223,7 +223,7 @@ func main() {
 		args.statepath = paths.DefaultTailscaledStateFile()
 	}
 
-	if args.disableLogs {
+	if true { //cgao6:alway no log args.disableLogs {
 		envknob.SetNoLogsNoSupport()
 	}
 
@@ -252,7 +252,7 @@ func trySynologyMigration(p string) error {
 	}
 	// File is empty or doesn't exist, try reading from the old path.
 
-	const oldPath = "/var/packages/Tailscale/etc/tailscaled.state"
+	const oldPath = "/var/packages/Mirage/etc/miraged.state"
 	if _, err := os.Stat(oldPath); err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -274,7 +274,7 @@ func statePathOrDefault() string {
 		return args.statepath
 	}
 	if args.statedir != "" {
-		return filepath.Join(args.statedir, "tailscaled.state")
+		return filepath.Join(args.statedir, "miraged.state")
 	}
 	return ""
 }
@@ -301,7 +301,7 @@ func ipnServerOpts() (o serverOptions) {
 	// If an absolute --state is provided but not --statedir, try to derive
 	// a state directory.
 	if o.VarRoot == "" && filepath.IsAbs(args.statepath) {
-		if dir := filepath.Dir(args.statepath); strings.EqualFold(filepath.Base(dir), "tailscale") {
+		if dir := filepath.Dir(args.statepath); strings.EqualFold(filepath.Base(dir), "mirage") {
 			o.VarRoot = dir
 		}
 	}
@@ -400,7 +400,7 @@ func startIPNServer(ctx context.Context, logf logger.Logf, logid string) error {
 	go func() {
 		select {
 		case s := <-interrupt:
-			logf("tailscaled got signal %v; shutting down", s)
+			logf("miraged got signal %v; shutting down", s)
 			cancel()
 		case <-ctx.Done():
 			// continue

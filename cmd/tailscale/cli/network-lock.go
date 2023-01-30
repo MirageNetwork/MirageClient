@@ -27,8 +27,8 @@ import (
 var netlockCmd = &ffcli.Command{
 	Name:       "lock",
 	ShortUsage: "lock <sub-command> <arguments>",
-	ShortHelp:  "Manage tailnet lock",
-	LongHelp:   "Manage tailnet lock",
+	ShortHelp:  "Manage miragenet lock",
+	LongHelp:   "Manage miragenet lock",
 	Subcommands: []*ffcli.Command{
 		nlInitCmd,
 		nlStatusCmd,
@@ -52,33 +52,33 @@ var nlInitArgs struct {
 var nlInitCmd = &ffcli.Command{
 	Name:       "init",
 	ShortUsage: "init [--gen-disablement-for-support] --gen-disablements N <trusted-key>...",
-	ShortHelp:  "Initialize tailnet lock",
+	ShortHelp:  "Initialize miragenet lock",
 	LongHelp: strings.TrimSpace(`
 
-The 'tailscale lock init' command initializes tailnet lock for the
-entire tailnet. The tailnet lock keys specified are those initially
-trusted to sign nodes or to make further changes to tailnet lock.
+The 'mirage lock init' command initializes miragenet lock for the
+entire miragenet. The miragenet lock keys specified are those initially
+trusted to sign nodes or to make further changes to miragenet lock.
 
-You can identify the tailnet lock key for a node you wish to trust by
-running 'tailscale lock' on that node, and copying the node's tailnet
+You can identify the miragenet lock key for a node you wish to trust by
+running 'mirage lock' on that node, and copying the node's miragenet
 lock key.
 
-To disable tailnet lock, use the 'tailscale lock disable' command
+To disable miragenet lock, use the 'mirage lock disable' command
 along with one of the disablement secrets.
 The number of disablement secrets to be generated is specified using the
---gen-disablements flag. Initializing tailnet lock requires at least
+--gen-disablements flag. Initializing miragenet lock requires at least
 one disablement.
 
 If --gen-disablement-for-support is specified, an additional disablement secret
-will be generated and transmitted to Tailscale, which support can use to disable
-tailnet lock. We recommend setting this flag.
+will be generated and transmitted to Mirage, which support can use to disable
+miragenet lock. We recommend setting this flag.
 
 `),
 	Exec: runNetworkLockInit,
 	FlagSet: (func() *flag.FlagSet {
 		fs := newFlagSet("lock init")
 		fs.IntVar(&nlInitArgs.numDisablements, "gen-disablements", 1, "number of disablement secrets to generate")
-		fs.BoolVar(&nlInitArgs.disablementForSupport, "gen-disablement-for-support", false, "generates and transmits a disablement secret for Tailscale support")
+		fs.BoolVar(&nlInitArgs.disablementForSupport, "gen-disablement-for-support", false, "generates and transmits a disablement secret for Mirage support")
 		fs.BoolVar(&nlInitArgs.confirm, "confirm", false, "do not prompt for confirmation")
 		return fs
 	})(),
@@ -90,7 +90,7 @@ func runNetworkLockInit(ctx context.Context, args []string) error {
 		return fixTailscaledConnectError(err)
 	}
 	if st.Enabled {
-		return errors.New("tailnet lock is already enabled")
+		return errors.New("miragenet lock is already enabled")
 	}
 
 	// Parse initially-trusted keys & disablement values.
@@ -112,10 +112,10 @@ func runNetworkLockInit(ctx context.Context, args []string) error {
 		}
 	}
 	if !foundSelfKey {
-		return errors.New("the tailnet lock key of the current node must be one of the trusted keys during initialization")
+		return errors.New("the miragenet lock key of the current node must be one of the trusted keys during initialization")
 	}
 
-	fmt.Println("You are initializing tailnet lock with the following trusted signing keys:")
+	fmt.Println("You are initializing miragenet lock with the following trusted signing keys:")
 	for _, k := range keys {
 		fmt.Printf(" - tlpub:%x (%s key)\n", k.Public, k.Kind.String())
 	}
@@ -124,7 +124,7 @@ func runNetworkLockInit(ctx context.Context, args []string) error {
 	if !nlInitArgs.confirm {
 		fmt.Printf("%d disablement secrets will be generated.\n", nlInitArgs.numDisablements)
 		if nlInitArgs.disablementForSupport {
-			fmt.Println("A disablement secret will be generated and transmitted to Tailscale support.")
+			fmt.Println("A disablement secret will be generated and transmitted to Mirage support.")
 		}
 
 		genSupportFlag := ""
@@ -154,7 +154,7 @@ func runNetworkLockInit(ctx context.Context, args []string) error {
 			return err
 		}
 		disablementValues = append(disablementValues, tka.DisablementKDF(supportDisablement))
-		fmt.Println("A disablement secret for Tailscale support has been generated and will be transmitted to Tailscale upon initialization.")
+		fmt.Println("A disablement secret for Mirage support has been generated and will be transmitted to Mirage upon initialization.")
 	}
 
 	// The state returned by NetworkLockInit likely doesn't contain the initialized state,
@@ -174,8 +174,8 @@ var nlStatusArgs struct {
 var nlStatusCmd = &ffcli.Command{
 	Name:       "status",
 	ShortUsage: "status",
-	ShortHelp:  "Outputs the state of tailnet lock",
-	LongHelp:   "Outputs the state of tailnet lock",
+	ShortHelp:  "Outputs the state of miragenet lock",
+	LongHelp:   "Outputs the state of miragenet lock",
 	Exec:       runNetworkLockStatus,
 	FlagSet: (func() *flag.FlagSet {
 		fs := newFlagSet("lock status")
@@ -197,24 +197,24 @@ func runNetworkLockStatus(ctx context.Context, args []string) error {
 	}
 
 	if st.Enabled {
-		fmt.Println("Tailnet lock is ENABLED.")
+		fmt.Println("Miragenet lock is ENABLED.")
 	} else {
-		fmt.Println("Tailnet lock is NOT enabled.")
+		fmt.Println("Miragenet lock is NOT enabled.")
 	}
 	fmt.Println()
 
 	if st.Enabled && st.NodeKey != nil && !st.PublicKey.IsZero() {
 		if st.NodeKeySigned {
-			fmt.Println("This node is accessible under tailnet lock.")
+			fmt.Println("This node is accessible under miragenet lock.")
 		} else {
-			fmt.Println("This node is LOCKED OUT by tailnet-lock, and action is required to establish connectivity.")
-			fmt.Printf("Run the following command on a node with a trusted key:\n\ttailscale lock sign %v %s\n", st.NodeKey, st.PublicKey.CLIString())
+			fmt.Println("This node is LOCKED OUT by miragenet-lock, and action is required to establish connectivity.")
+			fmt.Printf("Run the following command on a node with a trusted key:\n\tmirage lock sign %v %s\n", st.NodeKey, st.PublicKey.CLIString())
 		}
 		fmt.Println()
 	}
 
 	if !st.PublicKey.IsZero() {
-		fmt.Printf("This node's tailnet-lock key: %s\n", st.PublicKey.CLIString())
+		fmt.Printf("This node's miragenet-lock key: %s\n", st.PublicKey.CLIString())
 		fmt.Println()
 	}
 
@@ -236,7 +236,7 @@ func runNetworkLockStatus(ctx context.Context, args []string) error {
 
 	if st.Enabled && len(st.FilteredPeers) > 0 {
 		fmt.Println()
-		fmt.Println("The following nodes are locked out by tailnet lock and cannot connect to other nodes:")
+		fmt.Println("The following nodes are locked out by miragenet lock and cannot connect to other nodes:")
 		for _, p := range st.FilteredPeers {
 			var line strings.Builder
 			line.WriteString("\t")
@@ -260,8 +260,8 @@ func runNetworkLockStatus(ctx context.Context, args []string) error {
 var nlAddCmd = &ffcli.Command{
 	Name:       "add",
 	ShortUsage: "add <public-key>...",
-	ShortHelp:  "Adds one or more trusted signing keys to tailnet lock",
-	LongHelp:   "Adds one or more trusted signing keys to tailnet lock",
+	ShortHelp:  "Adds one or more trusted signing keys to miragenet lock",
+	LongHelp:   "Adds one or more trusted signing keys to miragenet lock",
 	Exec: func(ctx context.Context, args []string) error {
 		return runNetworkLockModify(ctx, args, nil)
 	},
@@ -270,8 +270,8 @@ var nlAddCmd = &ffcli.Command{
 var nlRemoveCmd = &ffcli.Command{
 	Name:       "remove",
 	ShortUsage: "remove <public-key>...",
-	ShortHelp:  "Removes one or more trusted signing keys from tailnet lock",
-	LongHelp:   "Removes one or more trusted signing keys from tailnet lock",
+	ShortHelp:  "Removes one or more trusted signing keys from miragenet lock",
+	LongHelp:   "Removes one or more trusted signing keys from miragenet lock",
 	Exec: func(ctx context.Context, args []string) error {
 		return runNetworkLockModify(ctx, nil, args)
 	},
@@ -330,7 +330,7 @@ func runNetworkLockModify(ctx context.Context, addArgs, removeArgs []string) err
 		return fixTailscaledConnectError(err)
 	}
 	if !st.Enabled {
-		return errors.New("tailnet lock is not enabled")
+		return errors.New("miragenet lock is not enabled")
 	}
 
 	addKeys, _, err := parseNLArgs(addArgs, true, false)
@@ -380,16 +380,16 @@ func runNetworkLockSign(ctx context.Context, args []string) error {
 var nlDisableCmd = &ffcli.Command{
 	Name:       "disable",
 	ShortUsage: "disable <disablement-secret>",
-	ShortHelp:  "Consumes a disablement secret to shut down tailnet lock for the tailnet",
+	ShortHelp:  "Consumes a disablement secret to shut down miragenet lock for the miragenet",
 	LongHelp: strings.TrimSpace(`
 
-The 'tailscale lock disable' command uses the specified disablement
-secret to disable tailnet lock.
+The 'mirage lock disable' command uses the specified disablement
+secret to disable miragenet lock.
 
-If tailnet lock is re-enabled, new disablement secrets can be generated.
+If miragenet lock is re-enabled, new disablement secrets can be generated.
 
 Once this secret is used, it has been distributed
-to all nodes in the tailnet and should be considered public.
+to all nodes in the miragenet and should be considered public.
 
 `),
 	Exec: runNetworkLockDisable,
@@ -409,15 +409,15 @@ func runNetworkLockDisable(ctx context.Context, args []string) error {
 var nlLocalDisableCmd = &ffcli.Command{
 	Name:       "local-disable",
 	ShortUsage: "local-disable",
-	ShortHelp:  "Disables tailnet lock for this node only",
+	ShortHelp:  "Disables miragenet lock for this node only",
 	LongHelp: strings.TrimSpace(`
 
-The 'tailscale lock local-disable' command disables tailnet lock for only
+The 'mirage lock local-disable' command disables miragenet lock for only
 the current node.
 
 If the current node is locked out, this does not mean that it can initiate
-connections in a tailnet with tailnet lock enabled. Rather, this means
-that the current node will accept traffic from other nodes in the tailnet
+connections in a miragenet with miragenet lock enabled. Rather, this means
+that the current node will accept traffic from other nodes in the miragenet
 that are locked out.
 
 `),
@@ -456,8 +456,8 @@ var nlLogArgs struct {
 var nlLogCmd = &ffcli.Command{
 	Name:       "log",
 	ShortUsage: "log [--limit N]",
-	ShortHelp:  "List changes applied to tailnet lock",
-	LongHelp:   "List changes applied to tailnet lock",
+	ShortHelp:  "List changes applied to miragenet lock",
+	LongHelp:   "List changes applied to miragenet lock",
 	Exec:       runNetworkLockLog,
 	FlagSet: (func() *flag.FlagSet {
 		fs := newFlagSet("lock log")

@@ -27,29 +27,29 @@ import (
 var sshCmd = &ffcli.Command{
 	Name:       "ssh",
 	ShortUsage: "ssh [user@]<host> [args...]",
-	ShortHelp:  "SSH to a Tailscale machine",
+	ShortHelp:  "SSH to a Mirage machine",
 	LongHelp: strings.TrimSpace(`
 
-The 'tailscale ssh' command is an optional wrapper around the system 'ssh'
-command that's useful in some cases. Tailscale SSH does not require its use;
-most users running the Tailscale SSH server will prefer to just use the normal
+The 'mirage ssh' command is an optional wrapper around the system 'ssh'
+command that's useful in some cases. Mirage SSH does not require its use;
+most users running the Mirage SSH server will prefer to just use the normal
 'ssh' command or their normal SSH client.
 
-The 'tailscale ssh' wrapper adds a few things:
+The 'mirage ssh' wrapper adds a few things:
 
 * It resolves the destination server name in its arguments using MagicDNS,
   even if --accept-dns=false.
 * It works in userspace-networking mode, by supplying a ProxyCommand to the
-  system 'ssh' command that connects via a pipe through tailscaled.
+  system 'ssh' command that connects via a pipe through miraged.
 * It automatically checks the destination server's SSH host key against the
-  node's SSH host key as advertised via the Tailscale coordination server.
+  node's SSH host key as advertised via the Mirage coordination server.
 `),
 	Exec: runSSH,
 }
 
 func runSSH(ctx context.Context, args []string) error {
 	if runtime.GOOS == "darwin" && version.IsSandboxedMacOS() && !envknob.UseWIPCode() {
-		return errors.New("The 'tailscale ssh' subcommand is not available on sandboxed macOS builds.\nUse the regular 'ssh' client instead.")
+		return errors.New("The 'mirage ssh' subcommand is not available on sandboxed macOS builds.\nUse the regular 'ssh' client instead.")
 	}
 	if len(args) == 0 {
 		return errors.New("usage: ssh [user@]<host>")
@@ -148,7 +148,7 @@ func writeKnownHosts(st *ipnstate.Status) (knownHostsFile string, err error) {
 	if err != nil {
 		return "", err
 	}
-	tsConfDir := filepath.Join(confDir, "tailscale")
+	tsConfDir := filepath.Join(confDir, "mirage") //cgao6: not sure it can work
 	if err := os.MkdirAll(tsConfDir, 0700); err != nil {
 		return "", err
 	}
