@@ -119,8 +119,8 @@ func onReady() {
 				fmt.Println("退出...")
 			case <-gui.versionMenu.ClickedCh:
 				fmt.Println("you clicked version")
-			case <-gui.registerMenu.ClickedCh:
-				open.Run(adduser_url)
+			case <-gui.userConsoleMenu.ClickedCh:
+				open.Run(console_url)
 			case <-gui.loginMenu.ClickedCh:
 				wantRun = true
 				if authURL != "" {

@@ -211,7 +211,8 @@ type MirageMenu struct {
 	//添加一个分割线
 	userMenu *systray.MenuItem //用户下拉菜单 - 初步有登出，后续有添加用户、切换用户、访问管理面板
 	//设计为头像、displayname、loginname
-	userLogoutMenu *systray.MenuItem
+	userConsoleMenu *systray.MenuItem
+	userLogoutMenu  *systray.MenuItem
 	//添加一个分割线
 	nodeMenu     *systray.MenuItem //本结点按钮：显示本设备、hostname(Mirage IP)，单击进行复制
 	nodeListMenu NodeListMenu      //在网设备菜单：下级为：我的设备菜单、其他各用户设备菜单
@@ -220,9 +221,8 @@ type MirageMenu struct {
 	exitNodeMenu int //TODO: 后续添加exitNode菜单
 	optionMenu   int //TODO： 后续添加配置项目菜单
 	//待添加部分完
-	versionMenu  *systray.MenuItem //关于菜单：目前显示版本号
-	registerMenu *systray.MenuItem //注册用户
-	quitMenu     *systray.MenuItem //退出按钮
+	versionMenu *systray.MenuItem //关于菜单：目前显示版本号
+	quitMenu    *systray.MenuItem //退出按钮
 }
 
 func (s *MirageMenu) init() {
@@ -239,13 +239,14 @@ func (s *MirageMenu) init() {
 	s.disconnMenu = systray.AddMenuItem("断开", "临时切断蜃境连接")
 	systray.AddSeparator()
 	s.userMenu = systray.AddMenuItem("", "")
+
+	s.userConsoleMenu = s.userMenu.AddSubMenuItem("控制台", "")
 	s.userLogoutMenu = s.userMenu.AddSubMenuItem("登出", "")
 	systray.AddSeparator()
 	s.nodeMenu = systray.AddMenuItem("本设备", "单击复制本节点IP")
 	s.nodeListMenu.init()
 	systray.AddSeparator()
 	s.versionMenu = systray.AddMenuItem("", "点击查看详细信息")
-	s.registerMenu = systray.AddMenuItem("注册用户", "点击注册新用户")
 	s.quitMenu = systray.AddMenuItem("退出", "退出蜃境")
 }
 
