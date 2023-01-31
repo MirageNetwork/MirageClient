@@ -81,7 +81,7 @@ func StartDaemon(ctx context.Context, cleanup bool, stopSignalCh chan bool) {
 		return
 	}
 
-	ln, _, err := safesocket.Listen(socket_path, safesocket.WindowsLocalPort)
+	ln, err := safesocket.Listen(socket_path)
 	if err != nil {
 		logNotify("[守护进程]\n监听创建失败", err)
 		return
