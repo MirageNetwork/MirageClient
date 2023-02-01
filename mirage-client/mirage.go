@@ -109,9 +109,9 @@ func onReady() {
 				}
 
 				if st.TailscaleIPs[0].Is4() {
-					gui.setRunning(st.User[st.Self.UserID].DisplayName, st.Self.HostName, st.TailscaleIPs[0].String(), backVersion)
+					gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion)
 				} else {
-					gui.setRunning(st.User[st.Self.UserID].DisplayName, st.Self.HostName, st.TailscaleIPs[1].String(), backVersion)
+					gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[1].String(), backVersion)
 				}
 				gui.nodeListMenu.update(st)
 			case <-gui.quitMenu.ClickedCh:
@@ -143,6 +143,11 @@ func onReady() {
 				}
 			case <-netMapChn:
 				st := getST()
+				if st.TailscaleIPs[0].Is4() {
+					gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion)
+				} else {
+					gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[1].String(), backVersion)
+				}
 				gui.nodeListMenu.update(st)
 				fmt.Println("Refresh menu due to netmap rcvd")
 			}

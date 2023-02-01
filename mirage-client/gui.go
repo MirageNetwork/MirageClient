@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/atotto/clipboard"
@@ -78,11 +79,19 @@ func (s *NodeListMenu) update(st *ipnstate.Status) {
 			}
 			if node, exist := s.myNodes.Nodes[tmpIPAddr]; exist {
 				node.Peer = *peer
-				node.Menu.SetTitle(peer.HostName)
+				titleName := strings.Split(peer.DNSName, ".")[0]
+				if titleName != peer.HostName {
+					titleName = titleName + "(" + peer.HostName + ")"
+				}
+				node.Menu.SetTitle(titleName)
 				node.Menu.Show()
 
 			} else {
-				tmpNodeMenu := s.myNodes.Outer.AddSubMenuItem(peer.HostName, tmpIPAddr.String())
+				titleName := strings.Split(peer.DNSName, ".")[0]
+				if titleName != peer.HostName {
+					titleName = titleName + "(" + peer.HostName + ")"
+				}
+				tmpNodeMenu := s.myNodes.Outer.AddSubMenuItem(titleName, tmpIPAddr.String())
 				s.myNodes.Nodes[tmpIPAddr] = NodeMenuItem{
 					Menu: tmpNodeMenu,
 					Peer: *peer,
@@ -96,7 +105,7 @@ func (s *NodeListMenu) update(st *ipnstate.Status) {
 							} else {
 								clipboard.WriteAll(menuItem.Peer.TailscaleIPs[1].String())
 							}
-							logNotify("设备"+menuItem.Peer.HostName+"的IP已复制", errors.New(""))
+							logNotify("设备"+strings.Split(menuItem.Peer.DNSName, ".")[0]+"的IP已复制", errors.New(""))
 						}
 					}
 				}(s.myNodes.Nodes[tmpIPAddr])
@@ -111,10 +120,10 @@ func (s *NodeListMenu) update(st *ipnstate.Status) {
 			if friNode, exist := s.friendNodes[peer.UserID]; exist { //是否已存在友节点菜单
 				if node, exist := friNode.Nodes[tmpIPAddr]; exist {
 					node.Peer = *peer
-					node.Menu.SetTitle(peer.HostName)
+					node.Menu.SetTitle(peer.DNSName)
 					node.Menu.Show()
 				} else {
-					tmpNodeMenu := friNode.Outer.AddSubMenuItem(peer.HostName, tmpIPAddr.String())
+					tmpNodeMenu := friNode.Outer.AddSubMenuItem(peer.DNSName, tmpIPAddr.String())
 					friNode.Nodes[tmpIPAddr] = NodeMenuItem{
 						Menu: tmpNodeMenu,
 						Peer: *peer,
@@ -128,7 +137,7 @@ func (s *NodeListMenu) update(st *ipnstate.Status) {
 								} else {
 									clipboard.WriteAll(menuItem.Peer.TailscaleIPs[1].String())
 								}
-								logNotify("设备"+menuItem.Peer.HostName+"的IP已复制", errors.New(""))
+								logNotify("设备"+menuItem.Peer.DNSName+"的IP已复制", errors.New(""))
 							}
 						}
 					}(friNode.Nodes[tmpIPAddr])
@@ -136,7 +145,7 @@ func (s *NodeListMenu) update(st *ipnstate.Status) {
 			} else {
 				s.friendNodes[peer.UserID] = new(NodeListMenuItem)
 				s.friendNodes[peer.UserID].init(s.Outer)
-				tmpNodeMenu := s.friendNodes[peer.UserID].Outer.AddSubMenuItem(peer.HostName, tmpIPAddr.String())
+				tmpNodeMenu := s.friendNodes[peer.UserID].Outer.AddSubMenuItem(peer.DNSName, tmpIPAddr.String())
 				s.friendNodes[peer.UserID].Nodes[tmpIPAddr] = NodeMenuItem{
 					Menu: tmpNodeMenu,
 					Peer: *peer,
@@ -150,7 +159,7 @@ func (s *NodeListMenu) update(st *ipnstate.Status) {
 							} else {
 								clipboard.WriteAll(menuItem.Peer.TailscaleIPs[1].String())
 							}
-							logNotify("设备"+menuItem.Peer.HostName+"的IP已复制", errors.New(""))
+							logNotify("设备"+menuItem.Peer.DNSName+"的IP已复制", errors.New(""))
 						}
 					}
 				}(s.friendNodes[peer.UserID].Nodes[tmpIPAddr])
@@ -214,7 +223,7 @@ type MirageMenu struct {
 	userConsoleMenu *systray.MenuItem
 	userLogoutMenu  *systray.MenuItem
 	//添加一个分割线
-	nodeMenu     *systray.MenuItem //本结点按钮：显示本设备、hostname(Mirage IP)，单击进行复制
+	nodeMenu     *systray.MenuItem //本结点按钮：显示本设备、dnsname(Mirage IP)，单击进行复制
 	nodeListMenu NodeListMenu      //在网设备菜单：下级为：我的设备菜单、其他各用户设备菜单
 	//添加一个分割线
 	///下列是后续待添加项目
@@ -319,7 +328,7 @@ func (s *MirageMenu) setStopped(userDisplayName string, version string) {
 	s.quitMenu.Show()
 }
 
-func (s *MirageMenu) setRunning(userDisplayName string, nodeHostName string, nodeMIP string, version string) {
+func (s *MirageMenu) setRunning(userDisplayName string, nodeDNSName string, nodeMIP string, version string) {
 
 	if s.isLogoSpin {
 		s.logoSpinChn <- true
@@ -337,7 +346,7 @@ func (s *MirageMenu) setRunning(userDisplayName string, nodeHostName string, nod
 	s.userMenu.Show()
 	s.userLogoutMenu.Show()
 
-	s.nodeMenu.SetTitle("本设备：" + nodeHostName + " (" + nodeMIP + ")")
+	s.nodeMenu.SetTitle("本设备：" + nodeDNSName + " (" + nodeMIP + ")")
 	s.nodeMenu.Enable()
 	s.nodeMenu.Show()
 	s.nodeListMenu.Outer.Show()
