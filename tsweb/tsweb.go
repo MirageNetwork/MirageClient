@@ -31,7 +31,7 @@ import (
 	"tailscale.com/metrics"
 	"tailscale.com/net/tsaddr"
 	"tailscale.com/types/logger"
-	"tailscale.com/util/strs"
+	"tailscale.com/util/vizerror"
 	"tailscale.com/version"
 )
 
@@ -263,7 +263,15 @@ func (h retHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	lw := &loggingResponseWriter{ResponseWriter: w, logf: h.opts.Logf}
 	err := h.rh.ServeHTTPReturn(lw, r)
-	hErr, hErrOK := err.(HTTPError)
+
+	var hErr HTTPError
+	var hErrOK bool
+	if errors.As(err, &hErr) {
+		hErrOK = true
+	} else if vizErr, ok := vizerror.As(err); ok {
+		hErrOK = true
+		hErr = HTTPError{Msg: vizErr.Error()}
+	}
 
 	if lw.code == 0 && err == nil && !lw.hijacked {
 		// If the handler didn't write and didn't send a header, that still means 200.
@@ -744,7 +752,7 @@ func structTypeSortedFields(t reflect.Type) []sortedStructField {
 // removed.
 func removeTypePrefixes(s string) string {
 	for _, prefix := range prefixesToTrim {
-		if trimmed, ok := strs.CutPrefix(s, prefix); ok {
+		if trimmed, ok := strings.CutPrefix(s, prefix); ok {
 			return trimmed
 		}
 	}
