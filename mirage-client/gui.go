@@ -227,8 +227,10 @@ type MirageMenu struct {
 	nodeListMenu NodeListMenu      //在网设备菜单：下级为：我的设备菜单、其他各用户设备菜单
 	//添加一个分割线
 	///下列是后续待添加项目
-	exitNodeMenu int //TODO: 后续添加exitNode菜单
-	optionMenu   int //TODO： 后续添加配置项目菜单
+	exitNodeMenu  int               //TODO: 后续添加exitNode菜单
+	optionMenu    *systray.MenuItem //配置项目菜单
+	optSubnetMenu *systray.MenuItem //配置-应用子网转发开关
+	optDNSMenu    *systray.MenuItem //配置-应用DNS开关
 	//待添加部分完
 	versionMenu *systray.MenuItem //关于菜单：目前显示版本号
 	quitMenu    *systray.MenuItem //退出按钮
@@ -255,6 +257,10 @@ func (s *MirageMenu) init() {
 	s.nodeMenu = systray.AddMenuItem("本设备", "单击复制本节点IP")
 	s.nodeListMenu.init()
 	systray.AddSeparator()
+	s.optionMenu = systray.AddMenuItem("配置项", "配置该设备蜃境网络")
+	s.optDNSMenu = s.optionMenu.AddSubMenuItemCheckbox("使用DNS设置", "是否使用蜃境网络的DNS配置", false)
+	s.optSubnetMenu = s.optionMenu.AddSubMenuItemCheckbox("使用子网转发", "是否使用蜃境网络的子网转发", false)
+
 	s.versionMenu = systray.AddMenuItem("", "点击查看详细信息")
 	s.quitMenu = systray.AddMenuItem("退出", "退出蜃境")
 }

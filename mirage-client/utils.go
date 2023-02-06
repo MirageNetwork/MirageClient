@@ -35,7 +35,7 @@ func CreateDefaultPref() *ipn.Prefs {
 	prefs := ipn.NewPrefs()
 	prefs.ControlURL = control_url
 	prefs.WantRunning = true
-	prefs.RouteAll = true
+	prefs.RouteAll = false
 	prefs.ExitNodeAllowLANAccess = false
 	prefs.CorpDNS = false
 	prefs.AllowSingleHosts = true
@@ -100,6 +100,8 @@ func updatePrefs(st *ipnstate.Status, prefs, curPrefs *ipn.Prefs) (simpleUp bool
 
 func kickLogin() {
 	prefs := CreateDefaultPref()
+	prefs.CorpDNS = gui.optDNSMenu.Checked()
+	prefs.RouteAll = gui.optSubnetMenu.Checked()
 	if err := LC.CheckPrefs(ctx, prefs); err != nil {
 		logNotify("Pref出错", err)
 	}
@@ -109,4 +111,64 @@ func kickLogin() {
 	}); err != nil {
 		logNotify("无法开始", err)
 	}
+}
+
+func refreshPrefs() {
+	newPref, err := LC.GetPrefs(ctx)
+	if err == nil {
+		if newPref.CorpDNS {
+			gui.optDNSMenu.Check()
+		} else {
+			gui.optDNSMenu.Uncheck()
+		}
+		if newPref.RouteAll {
+			gui.optSubnetMenu.Check()
+		} else {
+			gui.optSubnetMenu.Uncheck()
+		}
+	}
+}
+
+func switchDNSOpt(newV bool) error {
+	maskedPrefs := &ipn.MaskedPrefs{
+		Prefs: ipn.Prefs{
+			CorpDNS: newV,
+		},
+		CorpDNSSet: true,
+	}
+	curPrefs, err := LC.GetPrefs(ctx)
+	if err != nil {
+		return err
+	}
+
+	checkPrefs := curPrefs.Clone()
+	checkPrefs.ApplyEdits(maskedPrefs)
+	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
+		return err
+	}
+
+	_, err = LC.EditPrefs(ctx, maskedPrefs)
+	return err
+}
+
+func switchSubnetOpt(newV bool) error {
+	maskedPrefs := &ipn.MaskedPrefs{
+		Prefs: ipn.Prefs{
+			RouteAll: newV,
+		},
+		RouteAllSet: true,
+	}
+	curPrefs, err := LC.GetPrefs(ctx)
+	if err != nil {
+		return err
+	}
+
+	checkPrefs := curPrefs.Clone()
+	checkPrefs.ApplyEdits(maskedPrefs)
+	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
+		return err
+	}
+
+	_, err = LC.EditPrefs(ctx, maskedPrefs)
+	return err
 }

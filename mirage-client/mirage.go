@@ -38,6 +38,7 @@ const (
 var stopDaemonCh chan bool
 
 var netMapChn chan bool
+var prefChn chan bool
 
 var watcherUpCh chan bool
 
@@ -69,6 +70,7 @@ func main() {
 	stRunCh = make(chan bool)
 
 	netMapChn = make(chan bool)
+	prefChn = make(chan bool)
 
 	authURL = ""
 	wantRun = false
@@ -100,6 +102,7 @@ func onReady() {
 			case <-stStopCh:
 				st := getST()
 				gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
+				refreshPrefs()
 			case <-stRunCh:
 				st := getST()
 				if authURL != "" {
@@ -113,12 +116,17 @@ func onReady() {
 				} else {
 					gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[1].String(), backVersion)
 				}
+				refreshPrefs()
 				gui.nodeListMenu.update(st)
 			case <-gui.quitMenu.ClickedCh:
 				systray.Quit()
 				fmt.Println("退出...")
 			case <-gui.versionMenu.ClickedCh:
 				fmt.Println("you clicked version")
+			case <-gui.optDNSMenu.ClickedCh:
+				switchDNSOpt(!gui.optDNSMenu.Checked())
+			case <-gui.optSubnetMenu.ClickedCh:
+				switchSubnetOpt(!gui.optSubnetMenu.Checked())
 			case <-gui.userConsoleMenu.ClickedCh:
 				open.Run(console_url)
 			case <-gui.loginMenu.ClickedCh:
@@ -143,14 +151,26 @@ func onReady() {
 				}
 			case <-netMapChn:
 				st := getST()
-				if st.TailscaleIPs[0].Is4() {
-					gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion)
-				} else {
-					gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[1].String(), backVersion)
+				if st.BackendState == "Stopped" {
+					gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
+					refreshPrefs()
+				} else if st.BackendState == "Starting" {
+					gui.logoSpin(300)
+				} else if st.BackendState == "Running" {
+					if st.TailscaleIPs[0].Is4() {
+						gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion)
+					} else {
+						gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[1].String(), backVersion)
+					}
+					refreshPrefs()
+					gui.nodeListMenu.update(st)
 				}
-				gui.nodeListMenu.update(st)
 				fmt.Println("Refresh menu due to netmap rcvd")
+			case <-prefChn:
+				refreshPrefs()
+
 			}
+
 		}
 	}()
 }
