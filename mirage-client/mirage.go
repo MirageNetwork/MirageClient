@@ -11,8 +11,8 @@ import (
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/mirage-client/resource"
+	"tailscale.com/mirage-client/systray"
 
-	"github.com/getlantern/systray"
 	"github.com/skratchdot/open-golang/open"
 
 	"tailscale.com/client/tailscale"
@@ -118,6 +118,7 @@ func onReady() {
 				}
 				refreshPrefs()
 				gui.nodeListMenu.update(st)
+				gui.exitNodeMenu.update(st)
 			case <-gui.quitMenu.ClickedCh:
 				systray.Quit()
 				fmt.Println("退出...")
@@ -154,8 +155,6 @@ func onReady() {
 				if st.BackendState == "Stopped" {
 					gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
 					refreshPrefs()
-				} else if st.BackendState == "Starting" {
-					gui.logoSpin(300)
 				} else if st.BackendState == "Running" {
 					if st.TailscaleIPs[0].Is4() {
 						gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion)
@@ -164,6 +163,7 @@ func onReady() {
 					}
 					refreshPrefs()
 					gui.nodeListMenu.update(st)
+					gui.exitNodeMenu.update(st)
 				}
 				fmt.Println("Refresh menu due to netmap rcvd")
 			case <-prefChn:

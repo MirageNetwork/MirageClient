@@ -54,11 +54,13 @@ func WatchDaemon(ctx context.Context) {
 			fmt.Println("[ERROR] " + err.Error())
 			continue
 		}
-		if pref := n.Prefs; pref != nil {
-			prefChn <- true
-		}
+
 		if nm := n.NetMap; nm != nil {
 			netMapChn <- true
+		}
+
+		if pref := n.Prefs; pref != nil {
+			prefChn <- true
 		}
 		if st := n.State; st != nil {
 			switch *st {

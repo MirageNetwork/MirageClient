@@ -10,11 +10,12 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/gen2brain/beeep"
-	"github.com/getlantern/systray"
 	"github.com/rs/zerolog/log"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/mirage-client/resource"
+	"tailscale.com/mirage-client/systray"
 	"tailscale.com/tailcfg"
+	"tailscale.com/types/key"
 )
 
 type NodeMenuItem struct {
@@ -24,7 +25,7 @@ type NodeMenuItem struct {
 type NodeListMenuItem struct {
 	Outer  *systray.MenuItem
 	Header *systray.MenuItem
-	Line   *systray.MenuItem
+	Line   *systray.SeparatorItem
 	Nodes  map[netip.Addr]NodeMenuItem
 }
 
@@ -32,8 +33,7 @@ func (s *NodeListMenuItem) init(o *systray.MenuItem) {
 	s.Outer = o.AddSubMenuItem("", "")
 	s.Header = s.Outer.AddSubMenuItem("", "")
 	s.Header.Disable()
-	s.Line = s.Outer.AddSubMenuItem("——————", "")
-	s.Line.Disable()
+	s.Line = s.Outer.AddSeparator()
 	s.Nodes = make(map[netip.Addr]NodeMenuItem)
 }
 func (s *NodeListMenuItem) hideMe() {
@@ -49,7 +49,7 @@ func (s *NodeListMenuItem) showMe() {
 type NodeListMenu struct {
 	Outer       *systray.MenuItem
 	myNodes     NodeListMenuItem
-	Line        *systray.MenuItem
+	Line        *systray.SeparatorItem
 	friendNodes map[tailcfg.UserID]*NodeListMenuItem
 }
 
@@ -201,12 +201,103 @@ func (s *NodeListMenu) init() {
 	s.myNodes.init(s.Outer)
 	s.myNodes.Outer.SetTitle("我的设备")
 	s.myNodes.Outer.SetTooltip("隶属于我的设备")
-	s.Line = s.Outer.AddSubMenuItem("——————", "")
-	s.Line.Disable()
+	s.Line = s.Outer.AddSeparator()
 	s.friendNodes = make(map[tailcfg.UserID]*NodeListMenuItem)
 }
 func (s *NodeListMenu) Hide() {
 	s.Outer.Hide()
+}
+
+type ExitNodeListMenu struct {
+	Outer     *systray.MenuItem
+	NoneExit  *systray.MenuItem
+	ExitNodes map[key.NodePublic]NodeMenuItem
+
+	AllowLocalNetworkAccess *systray.MenuItem
+	RunExitNode             *systray.MenuItem
+	TailLine                *systray.SeparatorItem
+}
+
+func (s *ExitNodeListMenu) update(st *ipnstate.Status) {
+	currentExitNodeName := ""
+	for key, exitnode := range s.ExitNodes {
+		exitnode.Menu.Uncheck()
+		if peerst, ok := st.Peer[key]; !ok || !peerst.ExitNodeOption {
+			exitnode.Menu.Hide()
+		} else {
+			if st.ExitNodeStatus != nil && st.ExitNodeStatus.ID == st.Peer[key].ID {
+				currentExitNodeName = st.Peer[key].DNSName
+				if st.Peer[key].UserID == st.Self.UserID {
+					currentExitNodeName = strings.Split(currentExitNodeName, ".")[0]
+				}
+				exitnode.Menu.Check()
+			}
+			exitnode.Peer = *st.Peer[key]
+		}
+	}
+	for key, peerst := range st.Peer {
+		if peerst.ExitNodeOption {
+			if _, ok := s.ExitNodes[key]; !ok {
+				checked := false
+				if st.ExitNodeStatus != nil && peerst.ID == st.ExitNodeStatus.ID {
+					currentExitNodeName = peerst.DNSName
+					if peerst.UserID == st.Self.UserID {
+						currentExitNodeName = strings.Split(currentExitNodeName, ".")[0]
+					}
+					checked = true
+				}
+				nodename := peerst.DNSName
+				if peerst.UserID == st.Self.UserID {
+					nodename = strings.Split(nodename, ".")[0]
+				}
+				tmpExitNodeMenu := s.Outer.AddSubMenuItemCheckbox(nodename, "", checked)
+				s.ExitNodes[key] = NodeMenuItem{
+					Menu: tmpExitNodeMenu,
+					Peer: *peerst,
+				}
+			}
+		}
+	}
+
+	if currentExitNodeName != "" {
+		s.Outer.SetTitle("出口节点(" + currentExitNodeName + ")")
+	}
+}
+
+func (s *ExitNodeListMenu) init() {
+	s.Outer = systray.AddMenuItem("出口节点", "出口节点列表")
+	s.NoneExit = s.Outer.AddSubMenuItemCheckbox("不使用", "不使用任何出口节点", true)
+	s.ExitNodes = make(map[key.NodePublic]NodeMenuItem)
+	s.AllowLocalNetworkAccess = systray.AddMenuItemCheckbox("允许本地网络访问", "使用出口节点时对本地网络保持允许访问", false)
+	s.RunExitNode = systray.AddMenuItem("用作出口节点…", "将本机用于出口节点")
+	s.TailLine = systray.AddSeparator()
+}
+
+func (s *ExitNodeListMenu) Hide() {
+	s.Outer.Hide()
+	s.AllowLocalNetworkAccess.Hide()
+	s.RunExitNode.Hide()
+	s.TailLine.Hide()
+}
+
+func (s *ExitNodeListMenu) ShowDisabled() {
+	s.Outer.Disable()
+	s.AllowLocalNetworkAccess.Disable()
+	s.RunExitNode.Disable()
+	s.Outer.Show()
+	s.AllowLocalNetworkAccess.Show()
+	s.RunExitNode.Show()
+	s.TailLine.Show()
+}
+
+func (s *ExitNodeListMenu) Show() {
+	s.Outer.Enable()
+	s.AllowLocalNetworkAccess.Enable()
+	s.RunExitNode.Enable()
+	s.Outer.Show()
+	s.AllowLocalNetworkAccess.Show()
+	s.RunExitNode.Show()
+	s.TailLine.Show()
 }
 
 type MirageMenu struct {
@@ -225,9 +316,10 @@ type MirageMenu struct {
 	//添加一个分割线
 	nodeMenu     *systray.MenuItem //本结点按钮：显示本设备、dnsname(Mirage IP)，单击进行复制
 	nodeListMenu NodeListMenu      //在网设备菜单：下级为：我的设备菜单、其他各用户设备菜单
+	nodePartLine *systray.SeparatorItem
 	//添加一个分割线
 	///下列是后续待添加项目
-	exitNodeMenu  int               //TODO: 后续添加exitNode菜单
+	exitNodeMenu  ExitNodeListMenu  //出口节点列表菜单
 	optionMenu    *systray.MenuItem //配置项目菜单
 	optSubnetMenu *systray.MenuItem //配置-应用子网转发开关
 	optDNSMenu    *systray.MenuItem //配置-应用DNS开关
@@ -256,7 +348,8 @@ func (s *MirageMenu) init() {
 	systray.AddSeparator()
 	s.nodeMenu = systray.AddMenuItem("本设备", "单击复制本节点IP")
 	s.nodeListMenu.init()
-	systray.AddSeparator()
+	s.nodePartLine = systray.AddSeparator()
+	s.exitNodeMenu.init()
 	s.optionMenu = systray.AddMenuItem("配置项", "配置该设备蜃境网络")
 	s.optDNSMenu = s.optionMenu.AddSubMenuItemCheckbox("使用DNS设置", "是否使用蜃境网络的DNS配置", false)
 	s.optSubnetMenu = s.optionMenu.AddSubMenuItemCheckbox("使用子网转发", "是否使用蜃境网络的子网转发", false)
@@ -274,6 +367,7 @@ func (s *MirageMenu) hideAll() {
 	s.userLogoutMenu.Hide()
 	s.nodeMenu.Hide()
 	s.nodeListMenu.Hide()
+	s.nodePartLine.Hide()
 
 	s.versionMenu.Hide()
 	s.quitMenu.Hide()
@@ -300,6 +394,9 @@ func (s *MirageMenu) setNotLogin(version string) {
 	s.userLogoutMenu.Hide()
 	s.nodeMenu.Hide()
 	s.nodeListMenu.Hide()
+	s.nodePartLine.Hide()
+
+	s.exitNodeMenu.Hide()
 
 	s.versionMenu.SetTitle(version)
 	s.versionMenu.Show()
@@ -327,7 +424,11 @@ func (s *MirageMenu) setStopped(userDisplayName string, version string) {
 	s.nodeMenu.SetTitle("本设备")
 	s.nodeMenu.Disable()
 	s.nodeMenu.Show()
-	s.nodeListMenu.Hide()
+	s.nodeListMenu.Outer.Disable()
+	s.nodeListMenu.Outer.Show()
+	s.nodePartLine.Show()
+
+	s.exitNodeMenu.ShowDisabled()
 
 	s.versionMenu.SetTitle(version)
 	s.versionMenu.Show()
@@ -356,6 +457,9 @@ func (s *MirageMenu) setRunning(userDisplayName string, nodeDNSName string, node
 	s.nodeMenu.Enable()
 	s.nodeMenu.Show()
 	s.nodeListMenu.Outer.Show()
+	s.nodePartLine.Show()
+
+	s.exitNodeMenu.Show()
 
 	s.versionMenu.SetTitle(version)
 	s.versionMenu.Show()
