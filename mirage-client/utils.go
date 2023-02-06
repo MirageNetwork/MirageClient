@@ -7,9 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/tailcfg"
 	"tailscale.com/types/preftype"
 )
 
@@ -126,6 +128,53 @@ func refreshPrefs() {
 		} else {
 			gui.optSubnetMenu.Uncheck()
 		}
+		if newPref.ExitNodeAllowLANAccess {
+			gui.exitNodeMenu.AllowLocalNetworkAccess.Check()
+		} else {
+			gui.exitNodeMenu.AllowLocalNetworkAccess.Uncheck()
+		}
+
+		exitNodeName := ""
+		if !newPref.ExitNodeID.IsZero() {
+			for _, exitNode := range gui.exitNodeMenu.ExitNodes {
+				if exitNode.Peer.ID == newPref.ExitNodeID {
+					exitNode.Menu.Check()
+					exitNodeName = exitNode.Peer.DNSName
+					if exitNode.Peer.UserID == newPref.Persist.UserProfile.ID {
+						exitNodeName = strings.Split(exitNodeName, ".")[0]
+					}
+				} else {
+					exitNode.Menu.Uncheck()
+				}
+			}
+		}
+		if newPref.ExitNodeIP.IsValid() {
+			for _, exitNode := range gui.exitNodeMenu.ExitNodes {
+				if newPref.ExitNodeIP.Compare(exitNode.Peer.TailscaleIPs[0]) == 0 {
+					exitNode.Menu.Check()
+					exitNodeName = exitNode.Peer.DNSName
+					if exitNode.Peer.UserID == newPref.Persist.UserProfile.ID {
+						exitNodeName = strings.Split(exitNodeName, ".")[0]
+					}
+				} else if len(exitNode.Peer.TailscaleIPs) > 1 && newPref.ExitNodeIP.Compare(exitNode.Peer.TailscaleIPs[1]) == 0 {
+					exitNode.Menu.Check()
+					exitNodeName = exitNode.Peer.DNSName
+					if exitNode.Peer.UserID == newPref.Persist.UserProfile.ID {
+						exitNodeName = strings.Split(exitNodeName, ".")[0]
+					}
+				} else {
+					exitNode.Menu.Uncheck()
+				}
+			}
+		}
+		if exitNodeName != "" {
+			gui.exitNodeMenu.Outer.SetTitle("出口节点(" + exitNodeName + ")")
+			gui.exitNodeMenu.NoneExit.Uncheck()
+		} else {
+			gui.exitNodeMenu.Outer.SetTitle("出口节点")
+			gui.exitNodeMenu.NoneExit.Check()
+		}
+
 	}
 }
 
@@ -157,6 +206,50 @@ func switchSubnetOpt(newV bool) error {
 			RouteAll: newV,
 		},
 		RouteAllSet: true,
+	}
+	curPrefs, err := LC.GetPrefs(ctx)
+	if err != nil {
+		return err
+	}
+
+	checkPrefs := curPrefs.Clone()
+	checkPrefs.ApplyEdits(maskedPrefs)
+	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
+		return err
+	}
+
+	_, err = LC.EditPrefs(ctx, maskedPrefs)
+	return err
+}
+
+func switchExitNode(exitIP tailcfg.StableNodeID) error {
+	maskedPrefs := &ipn.MaskedPrefs{
+		Prefs: ipn.Prefs{
+			ExitNodeID: exitIP,
+		},
+		ExitNodeIDSet: true,
+	}
+	curPrefs, err := LC.GetPrefs(ctx)
+	if err != nil {
+		return err
+	}
+
+	checkPrefs := curPrefs.Clone()
+	checkPrefs.ApplyEdits(maskedPrefs)
+	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
+		return err
+	}
+
+	_, err = LC.EditPrefs(ctx, maskedPrefs)
+	return err
+}
+
+func switchAllowLocalNet(newV bool) error {
+	maskedPrefs := &ipn.MaskedPrefs{
+		Prefs: ipn.Prefs{
+			ExitNodeAllowLANAccess: newV,
+		},
+		ExitNodeAllowLANAccessSet: true,
 	}
 	curPrefs, err := LC.GetPrefs(ctx)
 	if err != nil {

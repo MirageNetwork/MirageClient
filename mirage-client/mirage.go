@@ -128,6 +128,10 @@ func onReady() {
 				switchDNSOpt(!gui.optDNSMenu.Checked())
 			case <-gui.optSubnetMenu.ClickedCh:
 				switchSubnetOpt(!gui.optSubnetMenu.Checked())
+			case <-gui.exitNodeMenu.AllowLocalNetworkAccess.ClickedCh:
+				switchAllowLocalNet(!gui.exitNodeMenu.AllowLocalNetworkAccess.Checked())
+			case <-gui.exitNodeMenu.NoneExit.ClickedCh:
+				switchExitNode("")
 			case <-gui.userConsoleMenu.ClickedCh:
 				open.Run(console_url)
 			case <-gui.loginMenu.ClickedCh:
@@ -168,7 +172,6 @@ func onReady() {
 				fmt.Println("Refresh menu due to netmap rcvd")
 			case <-prefChn:
 				refreshPrefs()
-
 			}
 
 		}

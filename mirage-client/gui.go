@@ -230,9 +230,12 @@ func (s *ExitNodeListMenu) update(st *ipnstate.Status) {
 				if st.Peer[key].UserID == st.Self.UserID {
 					currentExitNodeName = strings.Split(currentExitNodeName, ".")[0]
 				}
+				s.NoneExit.Uncheck()
 				exitnode.Menu.Check()
 			}
 			exitnode.Peer = *st.Peer[key]
+			exitnode.Menu.Show()
+
 		}
 	}
 	for key, peerst := range st.Peer {
@@ -245,22 +248,37 @@ func (s *ExitNodeListMenu) update(st *ipnstate.Status) {
 						currentExitNodeName = strings.Split(currentExitNodeName, ".")[0]
 					}
 					checked = true
+					s.NoneExit.Uncheck()
 				}
 				nodename := peerst.DNSName
 				if peerst.UserID == st.Self.UserID {
 					nodename = strings.Split(nodename, ".")[0]
 				}
 				tmpExitNodeMenu := s.Outer.AddSubMenuItemCheckbox(nodename, "", checked)
+
 				s.ExitNodes[key] = NodeMenuItem{
 					Menu: tmpExitNodeMenu,
 					Peer: *peerst,
 				}
+				go func(menuItem NodeMenuItem) {
+					for {
+						select {
+						case <-menuItem.Menu.ClickedCh:
+							if !menuItem.Menu.Checked() {
+								switchExitNode(menuItem.Peer.ID)
+							}
+						}
+					}
+				}(s.ExitNodes[key])
 			}
 		}
 	}
 
 	if currentExitNodeName != "" {
 		s.Outer.SetTitle("出口节点(" + currentExitNodeName + ")")
+	} else {
+		s.Outer.SetTitle("出口节点")
+		s.NoneExit.Check()
 	}
 }
 
@@ -456,6 +474,7 @@ func (s *MirageMenu) setRunning(userDisplayName string, nodeDNSName string, node
 	s.nodeMenu.SetTitle("本设备：" + nodeDNSName + " (" + nodeMIP + ")")
 	s.nodeMenu.Enable()
 	s.nodeMenu.Show()
+	s.nodeListMenu.Outer.Enable()
 	s.nodeListMenu.Outer.Show()
 	s.nodePartLine.Show()
 
