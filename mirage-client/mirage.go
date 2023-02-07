@@ -101,9 +101,9 @@ func onReady() {
 				getST()
 				gui.setNotLogin(backVersion)
 			case <-stStopCh:
+				refreshPrefs()
 				st := getST()
 				gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
-				refreshPrefs()
 			case <-stRunCh:
 				st := getST()
 				if authURL != "" {
@@ -174,8 +174,8 @@ func onReady() {
 			case <-netMapChn:
 				st := getST()
 				if st.BackendState == "Stopped" {
-					gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
 					refreshPrefs()
+					gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
 				} else if st.BackendState == "Running" {
 					if st.TailscaleIPs[0].Is4() {
 						gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion)

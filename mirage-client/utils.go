@@ -12,6 +12,8 @@ import (
 
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/mirage-client/resource"
+	"tailscale.com/mirage-client/systray"
 	"tailscale.com/net/tsaddr"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/preftype"
@@ -179,6 +181,9 @@ func refreshPrefs() {
 		if newPref.AdvertisesExitNode() {
 			gui.exitNodeMenu.RunExitNode.SetTitle("正用作出口节点")
 			gui.exitNodeMenu.RunExitNode.Check()
+			if newPref.WantRunning {
+				systray.SetTemplateIcon(resource.Icon_asexit, resource.Icon_asexit)
+			}
 		} else {
 			gui.exitNodeMenu.RunExitNode.SetTitle("用作出口节点…")
 			gui.exitNodeMenu.RunExitNode.Uncheck()

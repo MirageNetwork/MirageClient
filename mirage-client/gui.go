@@ -255,7 +255,6 @@ func (s *ExitNodeListMenu) update(st *ipnstate.Status) {
 					nodename = strings.Split(nodename, ".")[0]
 				}
 				tmpExitNodeMenu := s.Outer.AddSubMenuItemCheckbox(nodename, "", checked)
-
 				s.ExitNodes[key] = NodeMenuItem{
 					Menu: tmpExitNodeMenu,
 					Peer: *peerst,
@@ -276,6 +275,7 @@ func (s *ExitNodeListMenu) update(st *ipnstate.Status) {
 
 	if currentExitNodeName != "" {
 		s.Outer.SetTitle("出口节点(" + currentExitNodeName + ")")
+		systray.SetTemplateIcon(resource.Icon_exit, resource.Icon_exit)
 	} else {
 		s.Outer.SetTitle("出口节点")
 		s.NoneExit.Check()
