@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ncruces/zenity"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/mirage-client/resource"
@@ -132,6 +133,22 @@ func onReady() {
 				switchAllowLocalNet(!gui.exitNodeMenu.AllowLocalNetworkAccess.Checked())
 			case <-gui.exitNodeMenu.NoneExit.ClickedCh:
 				switchExitNode("")
+			case <-gui.exitNodeMenu.RunExitNode.ClickedCh:
+				if !gui.exitNodeMenu.RunExitNode.Checked() {
+					go func() {
+						feedback := zenity.Question("将该设备用作出口节点意味着您的蜃境网络中的其他设备可以将它们的网络流量通过您的IP发送",
+							zenity.Title("用作出口节点？"),
+							zenity.QuestionIcon)
+						if feedback == nil {
+							turnonExitNode()
+							return
+						} else {
+							return
+						}
+					}()
+				} else {
+					turnoffExitNode()
+				}
 			case <-gui.userConsoleMenu.ClickedCh:
 				open.Run(console_url)
 			case <-gui.loginMenu.ClickedCh:

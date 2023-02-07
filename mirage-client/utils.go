@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -11,11 +12,12 @@ import (
 
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/net/tsaddr"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/preftype"
 )
 
-var logo_png string = "./resource/Mirage_logo.png"
+var logo_png string = "./logo.png"
 var app_name string = "蜃境"
 var control_url string = "https://sdp.ipv4.uk"
 var console_url string = "https://sdp.ipv4.uk/admin"
@@ -174,7 +176,13 @@ func refreshPrefs() {
 			gui.exitNodeMenu.Outer.SetTitle("出口节点")
 			gui.exitNodeMenu.NoneExit.Check()
 		}
-
+		if newPref.AdvertisesExitNode() {
+			gui.exitNodeMenu.RunExitNode.SetTitle("正用作出口节点")
+			gui.exitNodeMenu.RunExitNode.Check()
+		} else {
+			gui.exitNodeMenu.RunExitNode.SetTitle("用作出口节点…")
+			gui.exitNodeMenu.RunExitNode.Uncheck()
+		}
 	}
 }
 
@@ -223,6 +231,9 @@ func switchSubnetOpt(newV bool) error {
 }
 
 func switchExitNode(exitIP tailcfg.StableNodeID) error {
+	if gui.exitNodeMenu.RunExitNode.Checked() {
+		return errors.New("用作出口节点的设备不能选择使用其他出口节点")
+	}
 	maskedPrefs := &ipn.MaskedPrefs{
 		Prefs: ipn.Prefs{
 			ExitNodeID: exitIP,
@@ -250,6 +261,60 @@ func switchAllowLocalNet(newV bool) error {
 			ExitNodeAllowLANAccess: newV,
 		},
 		ExitNodeAllowLANAccessSet: true,
+	}
+	curPrefs, err := LC.GetPrefs(ctx)
+	if err != nil {
+		return err
+	}
+
+	checkPrefs := curPrefs.Clone()
+	checkPrefs.ApplyEdits(maskedPrefs)
+	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
+		return err
+	}
+
+	_, err = LC.EditPrefs(ctx, maskedPrefs)
+	return err
+}
+
+func turnonExitNode() error {
+	st, err := LC.Status(ctx)
+	if err != nil {
+		return err
+	}
+	if st.ExitNodeStatus != nil {
+		return errors.New("正在使用其他出口节点，不能用作出口节点")
+	}
+	routes := make([]netip.Prefix, 0)
+	routes = append(routes, tsaddr.AllIPv4(), tsaddr.AllIPv6())
+	maskedPrefs := &ipn.MaskedPrefs{
+		Prefs: ipn.Prefs{
+			AdvertiseRoutes: routes,
+		},
+		AdvertiseRoutesSet: true,
+	}
+	curPrefs, err := LC.GetPrefs(ctx)
+	if err != nil {
+		return err
+	}
+
+	checkPrefs := curPrefs.Clone()
+	checkPrefs.ApplyEdits(maskedPrefs)
+	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
+		return err
+	}
+
+	_, err = LC.EditPrefs(ctx, maskedPrefs)
+	return err
+}
+
+func turnoffExitNode() error {
+	routes := make([]netip.Prefix, 0)
+	maskedPrefs := &ipn.MaskedPrefs{
+		Prefs: ipn.Prefs{
+			AdvertiseRoutes: routes,
+		},
+		AdvertiseRoutesSet: true,
 	}
 	curPrefs, err := LC.GetPrefs(ctx)
 	if err != nil {
