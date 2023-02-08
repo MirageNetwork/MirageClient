@@ -386,6 +386,8 @@ func (s *MirageMenu) hideAll() {
 	s.nodeMenu.Hide()
 	s.nodeListMenu.Hide()
 	s.nodePartLine.Hide()
+	s.exitNodeMenu.Hide()
+	s.optionMenu.Hide()
 
 	s.versionMenu.Hide()
 	s.quitMenu.Hide()
@@ -510,7 +512,13 @@ func (s *MirageMenu) logoSpin(interval time.Duration) {
 	}
 }
 
+func (s *MirageMenu) intoErr() {
+	s.hideAll()
+	systray.SetTemplateIcon(resource.LogoErr, resource.LogoErr)
+}
 func logNotify(msg string, err error) {
-	log.Error().Msg(msg + err.Error())
+	if err != nil {
+		log.Error().Msg(msg + err.Error())
+	}
 	beeep.Notify(app_name, msg, logo_png)
 }

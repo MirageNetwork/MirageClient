@@ -292,7 +292,6 @@ func getST() *ipnstate.Status {
 			Msg(`Get Status ERROR!`)
 		return nil
 	} else {
-		//log.Info().Msg("Daemon: " + st.Version)
 		backVersion = "蜃境" + strings.Split(st.Version, "-")[0]
 		return st
 	}
