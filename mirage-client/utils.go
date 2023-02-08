@@ -28,7 +28,7 @@ var state_path string = filepath.Join(os.Getenv("ProgramData"), "Mirage", "serve
 var pref_path string = filepath.Join(os.Getenv("ProgramData"), "Mirage", "pref.conf")
 var tun_name string = "Mirage"
 var log_id string = "Mirage"
-var engine_port uint16 = 41641 //TODO: 动态端口机制
+var engine_port uint16 = 0 //动态端口机制
 
 var (
 	ipv4default = netip.MustParsePrefix("0.0.0.0/0")
