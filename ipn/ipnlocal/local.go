@@ -4785,6 +4785,26 @@ func (b *LocalBackend) DeleteProfile(p ipn.ProfileID) error {
 	return b.resetForProfileChangeLockedOnEntry()
 }
 
+// cgao6: to read server code
+func (b *LocalBackend) GetServerCode() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	sn, err := b.pm.ReadServerCodeKey()
+	if err != nil {
+		return ""
+	}
+	return sn
+}
+func (b *LocalBackend) SetServerCode(sn string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	err := b.pm.SetServerNodeKey(sn)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // CurrentProfile returns the current LoginProfile.
 // The value may be zero if the profile is not persisted.
 func (b *LocalBackend) CurrentProfile() ipn.LoginProfile {

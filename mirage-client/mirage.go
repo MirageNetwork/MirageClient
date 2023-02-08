@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ncruces/zenity"
 	"tailscale.com/ipn"
+	"tailscale.com/ipn/ipnlocal"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/mirage-client/resource"
 	"tailscale.com/mirage-client/systray"
@@ -27,6 +29,10 @@ var ctx, ctxD context.Context
 var backVersion string
 
 var LC tailscale.LocalClient
+var LBChn chan *ipnlocal.LocalBackend
+var LB *ipnlocal.LocalBackend
+
+var magicVersionCounter int
 
 type NotifyType int
 
@@ -35,8 +41,6 @@ const (
 	RestartDaemon
 	IntoRunning
 )
-
-var stopDaemonCh chan bool
 
 var netMapChn chan bool
 var prefChn chan bool
@@ -63,7 +67,6 @@ func main() {
 		Socket:        socket_path,
 		UseSocketOnly: false}
 	ctx = context.Background()
-	stopDaemonCh = make(chan bool)
 
 	watcherUpCh = make(chan bool)
 	stNeedLoginCh = make(chan bool)
@@ -72,6 +75,9 @@ func main() {
 
 	netMapChn = make(chan bool)
 	prefChn = make(chan bool)
+
+	LBChn = make(chan *ipnlocal.LocalBackend)
+	magicVersionCounter = 0
 
 	authURL = ""
 	wantRun = false
@@ -90,11 +96,12 @@ func onReady() {
 	go func() {
 		ctxD = context.Background()
 		go gui.logoSpin(300)
-		go StartDaemon(ctxD, false, stopDaemonCh)
+		go StartDaemon(ctxD, false, LBChn)
 
 		getST()
 		gui.setNotLogin(backVersion)
 
+		LB := <-LBChn
 		for {
 			select {
 			case <-stNeedLoginCh:
@@ -124,7 +131,27 @@ func onReady() {
 				systray.Quit()
 				fmt.Println("退出...")
 			case <-gui.versionMenu.ClickedCh:
-				fmt.Println("you clicked version")
+				if magicVersionCounter == 0 {
+					go func() {
+						<-time.After(10 * time.Second)
+						magicVersionCounter = 0
+					}()
+				}
+				magicVersionCounter++
+				if magicVersionCounter == 3 {
+					magicVersionCounter = 0
+					newServerCode, err := zenity.Entry("新控制器代码（留空默认，下次登录生效）:",
+						zenity.WindowIcon(logo_png),
+						zenity.Title("重设定"),
+						zenity.OKLabel("确定"),
+						zenity.CancelLabel("取消"))
+					if err == nil {
+						if newServerCode == "" {
+							newServerCode = "ipv4.uk"
+						}
+						LB.SetServerCode(newServerCode)
+					}
+				}
 			case <-gui.optDNSMenu.ClickedCh:
 				switchDNSOpt(!gui.optDNSMenu.Checked())
 			case <-gui.optSubnetMenu.ClickedCh:
@@ -137,8 +164,10 @@ func onReady() {
 				if !gui.exitNodeMenu.RunExitNode.Checked() {
 					go func() {
 						feedback := zenity.Question("将该设备用作出口节点意味着您的蜃境网络中的其他设备可以将它们的网络流量通过您的IP发送",
+							zenity.WindowIcon(logo_png),
 							zenity.Title("用作出口节点？"),
-							zenity.QuestionIcon)
+							zenity.OKLabel("确定"),
+							zenity.CancelLabel("取消"))
 						if feedback == nil {
 							turnonExitNode()
 							return
@@ -152,11 +181,40 @@ func onReady() {
 			case <-gui.userConsoleMenu.ClickedCh:
 				open.Run(console_url)
 			case <-gui.loginMenu.ClickedCh:
-				wantRun = true
-				if authURL != "" {
-					open.Run(authURL)
+				if LB.GetServerCode() == "" {
+					newServerCode, err := zenity.Entry("请输入您接入的控制器代码（留空默认）:",
+						zenity.WindowIcon(logo_png),
+						zenity.Title("初始化"),
+						zenity.OKLabel("确定"),
+						zenity.CancelLabel("取消"))
+					if err == nil {
+						if newServerCode == "" {
+							newServerCode = "ipv4.uk"
+						}
+						LB.SetServerCode(newServerCode)
+						control_url = "https://sdp." + newServerCode
+						if !strings.Contains(newServerCode, ".") {
+							control_url = control_url + ".com"
+						}
+						wantRun = true
+						if authURL != "" {
+							open.Run(authURL)
+						} else {
+							kickLogin()
+						}
+					}
 				} else {
-					kickLogin()
+					serverCode := LB.GetServerCode()
+					control_url = "https://sdp." + serverCode
+					if !strings.Contains(serverCode, ".") {
+						control_url = control_url + ".com"
+					}
+					wantRun = true
+					if authURL != "" {
+						open.Run(authURL)
+					} else {
+						kickLogin()
+					}
 				}
 			case <-gui.userLogoutMenu.ClickedCh:
 				wantRun = false

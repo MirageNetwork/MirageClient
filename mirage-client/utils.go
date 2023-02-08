@@ -21,14 +21,14 @@ import (
 
 var logo_png string = "./logo.png"
 var app_name string = "蜃境"
-var control_url string = "https://sdp.ipv4.uk"
-var console_url string = "https://sdp.ipv4.uk/admin"
+var control_url string = "https://sdp.ipv4.uk" //TODO: 改为读取conf文件，首次通过gui设置
+var console_url string = control_url + "/admin"
 var socket_path string = `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
 var state_path string = filepath.Join(os.Getenv("ProgramData"), "Mirage", "server-state.conf")
 var pref_path string = filepath.Join(os.Getenv("ProgramData"), "Mirage", "pref.conf")
 var tun_name string = "Mirage"
 var log_id string = "Mirage"
-var engine_port uint16 = 41641
+var engine_port uint16 = 41641 //TODO: 动态端口机制
 
 var (
 	ipv4default = netip.MustParsePrefix("0.0.0.0/0")
@@ -187,6 +187,11 @@ func refreshPrefs() {
 		} else {
 			gui.exitNodeMenu.RunExitNode.SetTitle("用作出口节点…")
 			gui.exitNodeMenu.RunExitNode.Uncheck()
+			if newPref.WantRunning {
+				systray.SetTemplateIcon(resource.Mlogo, resource.Mlogo)
+			} else {
+				systray.SetTemplateIcon(resource.Logom, resource.Logom)
+			}
 		}
 	}
 }

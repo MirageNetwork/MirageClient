@@ -61,7 +61,7 @@ type serverOptions struct {
 	LoginFlags controlclient.LoginFlags
 }
 
-func StartDaemon(ctx context.Context, cleanup bool, stopSignalCh chan bool) {
+func StartDaemon(ctx context.Context, cleanup bool, lbChn chan *ipnlocal.LocalBackend) {
 
 	envknob.PanicIfAnyEnvCheckedInInit()
 	envknob.ApplyDiskConfig()
@@ -90,38 +90,36 @@ func StartDaemon(ctx context.Context, cleanup bool, stopSignalCh chan bool) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer func() {
 		cancel()
-		stopSignalCh <- false
 	}()
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM)
 	signal.Ignore(syscall.SIGPIPE)
-	go func(guiStop chan bool) {
+	go func() {
 		select {
 		case s := <-interrupt:
 			logf("tailscaled got signal %v; shutting down", s)
 			cancel()
 		case <-ctx.Done():
-		case v := <-guiStop:
-			logf("GUI told daemon to stop %v", v)
 			cancel()
 		}
-	}(stopSignalCh)
+	}()
 
 	srv := ipnserver.New(logf, log_id)
 	var lbErr syncs.AtomicValue[error]
 
-	go func() {
+	go func(lbChan chan *ipnlocal.LocalBackend) {
 		t0 := time.Now()
 		lb, err := getLocalBackend(ctx, logf, log_id)
 		if err == nil {
 			logf("got LocalBackend in %v", time.Since(t0).Round(time.Millisecond))
 			srv.SetLocalBackend(lb)
+			lbChan <- lb
 			return
 		}
 		lbErr.Store(err) // before the following cancel
 		cancel()         // make srv.Run below complete
-	}()
+	}(lbChn)
 
 	watcherUpCh <- true // can startWatcher now
 
@@ -183,6 +181,7 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logid string) (_ *ip
 	}
 
 	lb, err := ipnlocal.NewLocalBackend(logf, logid, store, dialer, e, opts.LoginFlags)
+
 	if err != nil {
 		return nil, fmt.Errorf("ipnlocal.NewLocalBackend: %w", err)
 	}
