@@ -93,6 +93,11 @@ func runStatus(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		jstr := string(j)
+		jstr = strings.ReplaceAll(jstr, "Tailscale", "Mirage")
+		jstr = strings.ReplaceAll(jstr, "https://tailscale.com/cap/", "")
+		jstr = strings.ReplaceAll(jstr, "Tailnet", "MirageNet")
+		j = []byte(jstr)
 		printf("%s", j)
 		return nil
 	}
