@@ -433,6 +433,8 @@ func (s *MirageMenu) setStopped(userDisplayName string, version string) {
 	systray.SetTemplateIcon(resource.Logom, resource.Logom)
 
 	s.loginMenu.Hide()
+	s.connectMenu.SetTitle("连接")
+	s.connectMenu.Enable()
 	s.connectMenu.Show()
 	s.disconnMenu.Hide()
 
@@ -454,9 +456,33 @@ func (s *MirageMenu) setStopped(userDisplayName string, version string) {
 	s.versionMenu.Show()
 	s.quitMenu.Show()
 }
+func (s *MirageMenu) setStarting(userDisplayName string, version string) {
+	s.loginMenu.Hide()
+	s.connectMenu.SetTitle("连接中……")
+	s.connectMenu.Disable()
+	s.connectMenu.Show()
+	s.disconnMenu.Enable()
+	s.disconnMenu.Show()
 
-func (s *MirageMenu) setRunning(userDisplayName string, nodeDNSName string, nodeMIP string, version string) {
+	s.userMenu.SetTitle(userDisplayName)
+	s.userMenu.Enable()
+	s.userMenu.Show()
+	s.userLogoutMenu.Show()
 
+	s.nodeMenu.SetTitle("本设备")
+	s.nodeMenu.Disable()
+	s.nodeMenu.Show()
+	s.nodeListMenu.Outer.Disable()
+	s.nodeListMenu.Outer.Show()
+	s.nodePartLine.Show()
+
+	s.exitNodeMenu.ShowDisabled()
+
+	s.versionMenu.SetTitle(version)
+	s.versionMenu.Show()
+	s.quitMenu.Show()
+}
+func (s *MirageMenu) setRunning(userDisplayName string, nodeDNSName string, nodeMIP string, version string, lastDays string) {
 	if s.isLogoSpin {
 		s.logoSpinChn <- true
 		<-s.logoSpinFinChn
@@ -465,7 +491,10 @@ func (s *MirageMenu) setRunning(userDisplayName string, nodeDNSName string, node
 	systray.SetTemplateIcon(resource.Mlogo, resource.Mlogo)
 
 	s.loginMenu.Hide()
-	s.connectMenu.Hide()
+	s.connectMenu.Disable()
+	s.connectMenu.SetTitle("已连接")
+	s.connectMenu.Show()
+	s.disconnMenu.Enable()
 	s.disconnMenu.Show()
 
 	s.userMenu.SetTitle(userDisplayName)
@@ -495,8 +524,9 @@ func (s *MirageMenu) updateNodeList(st *ipnstate.Status) {
 func (s *MirageMenu) logoSpin(interval time.Duration) {
 
 	s.isLogoSpin = true
-	s.loginMenu.SetTitle("连接中…")
-	s.loginMenu.Disable()
+
+	s.connectMenu.SetTitle("连接中…")
+	s.connectMenu.Disable()
 
 	for {
 		select {
@@ -512,7 +542,7 @@ func (s *MirageMenu) logoSpin(interval time.Duration) {
 	}
 }
 
-func (s *MirageMenu) intoErr() {
+func (s *MirageMenu) setErr() {
 	s.hideAll()
 	systray.SetTemplateIcon(resource.LogoErr, resource.LogoErr)
 }
