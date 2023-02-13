@@ -46,7 +46,7 @@ EOF
 fi
 
 tags=""
-ldflags="-X tailscale.com/version.Long=${LONG} -X tailscale.com/version.Short=${SHORT} -X tailscale.com/version.GitCommit=${GIT_HASH}"
+ldflags="-X tailscale.com/version.longStamp=${LONG} -X tailscale.com/version.shortStamp=${SHORT}"
 
 # build_dist.sh arguments must precede go build arguments.
 while [ "$#" -gt 1 ]; do
