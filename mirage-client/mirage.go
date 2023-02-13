@@ -50,10 +50,8 @@ var watcherUpCh chan bool
 // some state channel
 var stNeedLoginCh chan bool
 var stStopCh chan bool
+var stStartingCh chan bool
 var stRunCh chan bool
-
-var authURL string
-var wantRun bool
 
 var gui MirageMenu
 
@@ -71,6 +69,7 @@ func main() {
 	watcherUpCh = make(chan bool)
 	stNeedLoginCh = make(chan bool)
 	stStopCh = make(chan bool)
+	stStartingCh = make(chan bool)
 	stRunCh = make(chan bool)
 
 	netMapChn = make(chan bool)
@@ -78,9 +77,6 @@ func main() {
 
 	LBChn = make(chan *ipnlocal.LocalBackend)
 	magicVersionCounter = 0
-
-	authURL = ""
-	wantRun = false
 
 	onExit := func() {
 	}
@@ -99,30 +95,48 @@ func onReady() {
 		go StartDaemon(ctxD, false, LBChn)
 
 		getST()
-		gui.setNotLogin(backVersion)
+		go gui.setNotLogin(backVersion)
 
 		LB := <-LBChn
 		for {
 			select {
 			case <-stNeedLoginCh:
 				getST()
-				gui.setNotLogin(backVersion)
+				go gui.setNotLogin(backVersion)
 			case <-stStopCh:
 				refreshPrefs()
 				st := getST()
-				gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
+				go gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
+			case <-stStartingCh:
+				st := getST()
+				go gui.setStarting(st.User[st.Self.UserID].DisplayName, backVersion)
 			case <-stRunCh:
 				st := getST()
-				if authURL != "" {
-					authURL = ""
-					systray.SetTemplateIcon(resource.Mlogo, resource.Mlogo)
-					logNotify("已连接", errors.New(""))
+				systray.SetIcon(resource.Mlogo)
+				logNotify("已连接", errors.New(""))
+				lastDays := ""
+				if !st.Self.KeyExpiry.After(time.Now().AddDate(0, 0, 7)) {
+					lastDays = strings.TrimSuffix((st.Self.KeyExpiry.Sub(time.Now()) / time.Duration(time.Hour*24)).String(), "ns")
+					go func(lastDays string) {
+
+						feedback := zenity.Question("该设备还有"+lastDays+"天过期",
+							zenity.WindowIcon(logo_png),
+							zenity.Title("临期设备提醒"),
+							zenity.OKLabel("登录延期"),
+							zenity.CancelLabel("暂时不"))
+						if feedback == nil {
+							LC.StartLoginInteractive(ctx)
+							return
+						} else {
+							return
+						}
+					}(lastDays)
 				}
 
 				if st.TailscaleIPs[0].Is4() {
-					gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion)
+					go gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion, lastDays)
 				} else {
-					gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[1].String(), backVersion)
+					go gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[1].String(), backVersion, lastDays)
 				}
 				refreshPrefs()
 				gui.nodeListMenu.update(st)
@@ -196,12 +210,11 @@ func onReady() {
 						if !strings.Contains(newServerCode, ".") {
 							control_url = control_url + ".com"
 						}
-						wantRun = true
-						if authURL != "" {
-							open.Run(authURL)
-						} else {
+						st := getST()
+						if st.BackendState != "Running" {
 							kickLogin()
 						}
+						LC.StartLoginInteractive(ctx)
 					}
 				} else {
 					serverCode := LB.GetServerCode()
@@ -209,15 +222,14 @@ func onReady() {
 					if !strings.Contains(serverCode, ".") {
 						control_url = control_url + ".com"
 					}
-					wantRun = true
-					if authURL != "" {
-						open.Run(authURL)
-					} else {
+
+					st := getST()
+					if st.BackendState != "Running" {
 						kickLogin()
 					}
+					LC.StartLoginInteractive(ctx)
 				}
 			case <-gui.userLogoutMenu.ClickedCh:
-				wantRun = false
 				LC.Logout(ctx)
 			case <-gui.connectMenu.ClickedCh:
 				doConn()
@@ -233,12 +245,16 @@ func onReady() {
 				st := getST()
 				if st.BackendState == "Stopped" {
 					refreshPrefs()
-					gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
+					go gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
 				} else if st.BackendState == "Running" {
+					lastDays := ""
+					if !st.Self.KeyExpiry.After(time.Now().AddDate(0, 0, 7)) {
+						lastDays = strings.TrimSuffix((st.Self.KeyExpiry.Sub(time.Now()) / time.Duration(time.Hour*24)).String(), "ns")
+					}
 					if st.TailscaleIPs[0].Is4() {
-						gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion)
+						go gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion, lastDays)
 					} else {
-						gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[1].String(), backVersion)
+						go gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[1].String(), backVersion, lastDays)
 					}
 					refreshPrefs()
 					gui.nodeListMenu.update(st)
@@ -272,7 +288,7 @@ func doDisconn() {
 		log.Error().Msg("Get current status failed!")
 		return
 	}
-	if st.BackendState == "Running" {
+	if st.BackendState == "Running" || st.BackendState == "Starting" {
 		_, err = LC.EditPrefs(ctx, &ipn.MaskedPrefs{
 			Prefs: ipn.Prefs{
 				WantRunning: false,

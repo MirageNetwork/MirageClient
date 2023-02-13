@@ -20,7 +20,11 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/mirage-client"
+            "program": "${workspaceFolder}/mirage-client",
+            "args":[
+                "-tags walk_use_cgo",
+                "-ldflags=-H windowsgui"
+            ]
         },{
             "name": "StartUp",
             "type": "go",
@@ -59,6 +63,15 @@
                 "logout",
 
             ]
-        }
+        },{
+            "name": "Login TS",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/tailscale",
+            "args": [
+                "up"
+            ]
+        },
     ]
 }

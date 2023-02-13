@@ -275,7 +275,7 @@ func (s *ExitNodeListMenu) update(st *ipnstate.Status) {
 
 	if currentExitNodeName != "" {
 		s.Outer.SetTitle("出口节点(" + currentExitNodeName + ")")
-		systray.SetTemplateIcon(resource.Icon_exit, resource.Icon_exit)
+		systray.SetIcon(resource.Icon_exit)
 	} else {
 		s.Outer.SetTitle("出口节点")
 		s.NoneExit.Check()
@@ -331,6 +331,7 @@ type MirageMenu struct {
 	//设计为头像、displayname、loginname
 	userConsoleMenu *systray.MenuItem
 	userLogoutMenu  *systray.MenuItem
+	userPartLine    *systray.SeparatorItem
 	//添加一个分割线
 	nodeMenu     *systray.MenuItem //本结点按钮：显示本设备、dnsname(Mirage IP)，单击进行复制
 	nodeListMenu NodeListMenu      //在网设备菜单：下级为：我的设备菜单、其他各用户设备菜单
@@ -351,7 +352,7 @@ func (s *MirageMenu) init() {
 	s.logoSpinChn = make(chan bool, 1)
 	s.logoSpinFinChn = make(chan bool, 1)
 
-	systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
+	systray.SetIcon(resource.LogoIcon)
 	systray.SetTitle("蜃境")
 	systray.SetTooltip("简单安全的组网工具")
 
@@ -363,7 +364,7 @@ func (s *MirageMenu) init() {
 
 	s.userConsoleMenu = s.userMenu.AddSubMenuItem("控制台", "")
 	s.userLogoutMenu = s.userMenu.AddSubMenuItem("登出", "")
-	systray.AddSeparator()
+	s.userPartLine = systray.AddSeparator()
 	s.nodeMenu = systray.AddMenuItem("本设备", "单击复制本节点IP")
 	s.nodeListMenu.init()
 	s.nodePartLine = systray.AddSeparator()
@@ -383,6 +384,7 @@ func (s *MirageMenu) hideAll() {
 
 	s.userMenu.Hide()
 	s.userLogoutMenu.Hide()
+	s.userPartLine.Hide()
 	s.nodeMenu.Hide()
 	s.nodeListMenu.Hide()
 	s.nodePartLine.Hide()
@@ -400,7 +402,7 @@ func (s *MirageMenu) setNotLogin(version string) {
 		<-s.logoSpinFinChn
 		s.isLogoSpin = false
 	}
-	systray.SetTemplateIcon(resource.LogoIcon, resource.LogoIcon)
+	systray.SetIcon(resource.LogoIcon)
 
 	s.loginMenu.Enable()
 	s.loginMenu.SetTitle("登录")
@@ -410,8 +412,9 @@ func (s *MirageMenu) setNotLogin(version string) {
 
 	s.userMenu.SetTitle("请先登录")
 	s.userMenu.Disable()
-	s.userMenu.Show()
+	s.userMenu.Hide()
 	s.userLogoutMenu.Hide()
+	s.userPartLine.Hide()
 	s.nodeMenu.Hide()
 	s.nodeListMenu.Hide()
 	s.nodePartLine.Hide()
@@ -430,7 +433,7 @@ func (s *MirageMenu) setStopped(userDisplayName string, version string) {
 		<-s.logoSpinFinChn
 		s.isLogoSpin = false
 	}
-	systray.SetTemplateIcon(resource.Logom, resource.Logom)
+	systray.SetIcon(resource.Logom)
 
 	s.loginMenu.Hide()
 	s.connectMenu.SetTitle("连接")
@@ -442,6 +445,7 @@ func (s *MirageMenu) setStopped(userDisplayName string, version string) {
 	s.userMenu.Enable()
 	s.userMenu.Show()
 	s.userLogoutMenu.Show()
+	s.userPartLine.Show()
 
 	s.nodeMenu.SetTitle("本设备")
 	s.nodeMenu.Disable()
@@ -457,8 +461,9 @@ func (s *MirageMenu) setStopped(userDisplayName string, version string) {
 	s.quitMenu.Show()
 }
 func (s *MirageMenu) setStarting(userDisplayName string, version string) {
+	go s.logoSpin(300)
 	s.loginMenu.Hide()
-	s.connectMenu.SetTitle("连接中……")
+	s.connectMenu.SetTitle("连接中…")
 	s.connectMenu.Disable()
 	s.connectMenu.Show()
 	s.disconnMenu.Enable()
@@ -468,6 +473,7 @@ func (s *MirageMenu) setStarting(userDisplayName string, version string) {
 	s.userMenu.Enable()
 	s.userMenu.Show()
 	s.userLogoutMenu.Show()
+	s.userPartLine.Show()
 
 	s.nodeMenu.SetTitle("本设备")
 	s.nodeMenu.Disable()
@@ -488,7 +494,7 @@ func (s *MirageMenu) setRunning(userDisplayName string, nodeDNSName string, node
 		<-s.logoSpinFinChn
 		s.isLogoSpin = false
 	}
-	systray.SetTemplateIcon(resource.Mlogo, resource.Mlogo)
+	systray.SetIcon(resource.Mlogo)
 
 	s.loginMenu.Hide()
 	s.connectMenu.Disable()
@@ -501,6 +507,7 @@ func (s *MirageMenu) setRunning(userDisplayName string, nodeDNSName string, node
 	s.userMenu.Enable()
 	s.userMenu.Show()
 	s.userLogoutMenu.Show()
+	s.userPartLine.Show()
 
 	s.nodeMenu.SetTitle("本设备：" + nodeDNSName + " (" + nodeMIP + ")")
 	s.nodeMenu.Enable()
@@ -516,11 +523,6 @@ func (s *MirageMenu) setRunning(userDisplayName string, nodeDNSName string, node
 	s.quitMenu.Show()
 }
 
-func (s *MirageMenu) updateNodeList(st *ipnstate.Status) {
-	s.nodeListMenu.hideAllNodes()
-
-}
-
 func (s *MirageMenu) logoSpin(interval time.Duration) {
 
 	s.isLogoSpin = true
@@ -534,9 +536,9 @@ func (s *MirageMenu) logoSpin(interval time.Duration) {
 			s.logoSpinFinChn <- true
 			return
 		default:
-			systray.SetTemplateIcon(resource.Mlogo1, resource.Mlogo1)
+			systray.SetIcon(resource.Mlogo1)
 			<-time.After(interval * time.Millisecond)
-			systray.SetTemplateIcon(resource.Mlogo2, resource.Mlogo2)
+			systray.SetIcon(resource.Mlogo2)
 			<-time.After(interval * time.Millisecond)
 		}
 	}
@@ -544,7 +546,7 @@ func (s *MirageMenu) logoSpin(interval time.Duration) {
 
 func (s *MirageMenu) setErr() {
 	s.hideAll()
-	systray.SetTemplateIcon(resource.LogoErr, resource.LogoErr)
+	systray.SetIcon(resource.LogoErr)
 }
 func logNotify(msg string, err error) {
 	if err != nil {

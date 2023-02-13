@@ -65,24 +65,24 @@ func WatchDaemon(ctx context.Context) {
 		if st := n.State; st != nil {
 			switch *st {
 			case ipn.NeedsLogin:
-				if wantRun {
-					LC.StartLoginInteractive(ctx)
-				}
 				stNeedLoginCh <- true
 			case ipn.Stopped:
 				stStopCh <- true
+			case ipn.Starting:
+				stStartingCh <- true
 			case ipn.Running:
 				stRunCh <- true
 			}
 		}
-		if loginFin := n.LoginFinished; loginFin != nil {
-			go gui.logoSpin(300)
-		}
 		if url := n.BrowseToURL; url != nil {
-			if authURL == "" && wantRun {
-				open.Run(*url)
+			prefs, err := LC.GetPrefs(ctx)
+			if err != nil {
+				break
 			}
-			authURL = *url
+			if prefs.WantRunning {
+				open.Run(*url)
+				fmt.Println("I opened this url: " + *url)
+			}
 		}
 	}
 }
