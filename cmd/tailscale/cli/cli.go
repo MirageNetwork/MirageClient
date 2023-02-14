@@ -150,6 +150,8 @@ For help on subcommands, add --help after: "mirage status --help".
 		rootCmd.Subcommands = append(rootCmd.Subcommands, serveCmd)
 	case slices.Contains(args, "update"):
 		rootCmd.Subcommands = append(rootCmd.Subcommands, updateCmd)
+	case slices.Contains(args, "configure"):
+		rootCmd.Subcommands = append(rootCmd.Subcommands, configureCmd)
 	}
 	if runtime.GOOS == "linux" && distro.Get() == distro.Synology {
 		rootCmd.Subcommands = append(rootCmd.Subcommands, configureHostCmd)
