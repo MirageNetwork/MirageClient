@@ -13,8 +13,8 @@ import (
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnlocal"
 	"tailscale.com/ipn/ipnstate"
-	"tailscale.com/mirage-client/resource"
-	"tailscale.com/mirage-client/systray"
+	"tailscale.com/mirageclient-win/resource"
+	"tailscale.com/mirageclient-win/systray"
 
 	"github.com/skratchdot/open-golang/open"
 

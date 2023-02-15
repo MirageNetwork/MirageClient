@@ -12,8 +12,8 @@ import (
 
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
-	"tailscale.com/mirage-client/resource"
-	"tailscale.com/mirage-client/systray"
+	"tailscale.com/mirageclient-win/resource"
+	"tailscale.com/mirageclient-win/systray"
 	"tailscale.com/net/tsaddr"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/preftype"

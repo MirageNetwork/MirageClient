@@ -20,7 +20,7 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/mirage-client",
+            "program": "${workspaceFolder}/mirageclient-win",
             "args":[
                 "-tags walk_use_cgo",
                 "-ldflags=-H windowsgui"
