@@ -539,8 +539,6 @@ func (c *Auto) SetHostinfo(hi *tailcfg.Hostinfo) {
 	if hi == nil {
 		panic("nil Hostinfo")
 	}
-	mk, _ := c.direct.getMachinePrivKey()
-	hi.BackendLogID = mk.Public().String()
 	if !c.direct.SetHostinfo(hi) {
 		// No changes. Don't log.
 		return
