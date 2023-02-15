@@ -1,88 +1,33 @@
-# Tailscale
+https://github.com/MirageNetwork/MirageServer/raw/main/docs/logo/logo_withname@1024.png
 
-https://tailscale.com
-
-Private WireGuard® networks made easy
-
-## Overview
-
-This repository contains the majority of Tailscale's open source code.
-Notably, it includes the `tailscaled` daemon and
-the `tailscale` CLI tool. The `tailscaled` daemon runs on Linux, Windows,
-[macOS](https://tailscale.com/kb/1065/macos-variants/), and to varying degrees
-on FreeBSD and OpenBSD. The Tailscale iOS and Android apps use this repo's
-code, but this repo doesn't contain the mobile GUI code.
-
-Other [Tailscale repos](https://github.com/orgs/tailscale/repositories) of note:
-
-* the Android app is at https://github.com/tailscale/tailscale-android
-* the Synology package is at https://github.com/tailscale/tailscale-synology
-* the QNAP package is at https://github.com/tailscale/tailscale-qpkg
-* the Chocolatey packaging is at https://github.com/tailscale/tailscale-chocolatey
-
-For background on which parts of Tailscale are open source and why,
-see [https://tailscale.com/opensource/](https://tailscale.com/opensource/).
-
-## Using
-
-We serve packages for a variety of distros and platforms at
-[https://pkgs.tailscale.com](https://pkgs.tailscale.com/).
-
-## Other clients
-
-The [macOS, iOS, and Windows clients](https://tailscale.com/download)
-use the code in this repository but additionally include small GUI
-wrappers. The GUI wrappers on non-open source platforms are themselves
-not open source.
-
-## Building
-
-We always require the latest Go release, currently Go 1.20. (While we build
-releases with our [Go fork](https://github.com/tailscale/go/), its use is not
-required.)
-
-```
-go install tailscale.com/cmd/tailscale{,d}
-```
-
-If you're packaging Tailscale for distribution, use `build_dist.sh`
-instead, to burn commit IDs and version info into the binaries:
-
-```
-./build_dist.sh tailscale.com/cmd/tailscale
-./build_dist.sh tailscale.com/cmd/tailscaled
-```
-
-If your distro has conventions that preclude the use of
-`build_dist.sh`, please do the equivalent of what it does in your
-distro's way, so that bug reports contain useful version information.
-
-## Bugs
-
-Please file any issues about this code or the hosted service on
-[the issue tracker](https://github.com/tailscale/tailscale/issues).
-
-## Contributing
-
-PRs welcome! But please file bugs. Commit messages should [reference
-bugs](https://docs.github.com/en/github/writing-on-github/autolinked-references-and-urls).
-
-We require [Developer Certificate of
-Origin](https://en.wikipedia.org/wiki/Developer_Certificate_of_Origin)
-`Signed-off-by` lines in commits.
-
-See `git log` for our commit message style. It's basically the same as
-[Go's style](https://github.com/golang/go/wiki/CommitMessage).
-
-## About Us
-
-[Tailscale](https://tailscale.com/) is primarily developed by the
-people at https://github.com/orgs/tailscale/people. For other contributors,
-see:
-
-* https://github.com/tailscale/tailscale/graphs/contributors
-* https://github.com/tailscale/tailscale-android/graphs/contributors
-
-## Legal
-
-WireGuard is a registered trademark of Jason A. Donenfeld.
+基于Tailscale开放源码实现的蜃境网络客户端（目前有Windows版本）    
+    
+**注意**  此版本可能与Headscale、Tailscale官方版本均有不兼容的情况，如需与官方版本并用需要考虑进行兼容性测试。    
+    
+---    
+    
+## 完成功能进度    
+   
+- [ ] Windows版
+    - [x] 登录、登出    
+    - [x] 连接、断开   
+    - [x] 登录及连接状态记忆驻留    
+    - [x] 用户节点信息显示    
+    - [x] 设置使用子网转发    
+    - [x] 设置使用DNS设置    
+    - [ ] 设置入流量阻断    
+    - [x] 显示出口节点以及使用出口节点    
+    - [x] 用作出口节点    
+    - [x] 配置控制器地址    
+    - [x] 密钥临期提醒及展期登录    
+    - [ ] 授权密钥登录    
+    - [ ] 多用户登录及切换    
+    - [ ] 文件传输    
+    - [ ] 服务化    
+    - [ ] 自动配置开启RDP远程    
+ - [ ] Linux版    
+ - [ ] 群晖版    
+ - [ ] 容器版    
+     
+ macOS版及iOS版预计命名为MirageX，不在此Repo   
+ 安卓版预计命名为Mirage-android，不在此Repo    
