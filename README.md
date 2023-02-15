@@ -1,4 +1,4 @@
-https://github.com/MirageNetwork/MirageServer/raw/main/docs/logo/logo_withname@1024.png
+<img src="./docs/logo_withname%401024.png" width="30%" height="30%">
 
 基于Tailscale开放源码实现的蜃境网络客户端（目前有Windows版本）    
     
