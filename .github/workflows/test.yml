@@ -14,7 +14,7 @@ env:
   # This variable toggles the fuzz job between two modes:
   #  - false: we expect fuzzing to be happy, and should report failure if it's not.
   #  - true: we expect fuzzing is broken, and should report failure if it start working.
-  TS_FUZZ_CURRENTLY_BROKEN: true
+  TS_FUZZ_CURRENTLY_BROKEN: false
 
 on:
   push:
@@ -24,6 +24,7 @@ on:
   pull_request:
     branches:
       - "*"
+  merge_group:
 
 concurrency:
   # For PRs, later CI runs preempt previous ones. e.g. a force push on a PR
@@ -55,6 +56,7 @@ jobs:
         GOARCH: ${{ matrix.goarch }}
     - name: build variant CLIs
       run: |
+        export TS_USE_TOOLCHAIN=1
         ./build_dist.sh --extra-small ./cmd/tailscaled
         ./build_dist.sh --box ./cmd/tailscaled
         ./build_dist.sh --extra-small --box ./cmd/tailscaled
@@ -144,6 +146,12 @@ jobs:
             goarch: "386" # thanks yaml
           - goos: linux
             goarch: loong64
+          - goos: linux
+            goarch: arm
+            goarm: "5"
+          - goos: linux
+            goarch: arm
+            goarm: "7"
           # macOS
           - goos: darwin
             goarch: amd64
@@ -169,6 +177,7 @@ jobs:
       env:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
+        GOARM: ${{ matrix.goarm }}
         CGO_ENABLED: "0"
     - name: build tests
       run: ./tool/go test -exec=true ./...
@@ -351,8 +360,7 @@ jobs:
         GOARCH: ${{ matrix.goarch }}
 
   notify_slack:
-    # Only notify slack for merged commits, not PR failures.
-    if: failure() && github.event_name == 'push'
+    if: always()
     # Any of these jobs failing causes a slack notification.
     needs: 
       - android
@@ -371,6 +379,14 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
     - name: notify  
+      # Only notify slack for merged commits, not PR failures.
+      #
+      # It may be tempting to move this condition into the job's 'if' block, but
+      # don't: Github only collapses the test list into "everything is OK" if
+      # all jobs succeeded. A skipped job results in the list staying expanded.
+      # By having the job always run, but skipping its only step as needed, we
+      # let the CI output collapse nicely in PRs.
+      if: failure() && github.event_name == 'push'
       uses: ruby/action-slack@v3.0.0
       with:
         payload: |
