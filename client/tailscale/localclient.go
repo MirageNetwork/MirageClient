@@ -113,7 +113,7 @@ func (lc *LocalClient) defaultDialer(ctx context.Context, network, addr string) 
 //
 // DoLocalRequest may mutate the request to add Authorization headers.
 func (lc *LocalClient) DoLocalRequest(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Tailscale-Cap", strconv.Itoa(int(tailcfg.CurrentCapabilityVersion)))
+	req.Header.Set("Mirage-Cap", strconv.Itoa(int(tailcfg.CurrentCapabilityVersion)))
 	lc.tsClientOnce.Do(func() {
 		lc.tsClient = &http.Client{
 			Transport: &http.Transport{
@@ -143,7 +143,7 @@ func (lc *LocalClient) doLocalRequestNiceError(req *http.Request) (*http.Respons
 		if oe, ok := ue.Err.(*net.OpError); ok && oe.Op == "dial" {
 			path := req.URL.Path
 			pathPrefix, _, _ := strings.Cut(path, "?")
-			return nil, fmt.Errorf("Failed to connect to local Tailscale daemon for %s; %s Error: %w", pathPrefix, tailscaledConnectHint(), oe)
+			return nil, fmt.Errorf("Failed to connect to local Mirage daemon for %s; %s Error: %w", pathPrefix, tailscaledConnectHint(), oe)
 		}
 	}
 	return nil, err
