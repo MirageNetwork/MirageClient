@@ -39,3 +39,4 @@ cmd/tailscaled/tailscaled
 .direnv/
 
 /gocross
+/dist
