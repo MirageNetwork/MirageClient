@@ -303,7 +303,7 @@ func (ft *firewallTweaker) doSet(local []string, killswitch bool, clear bool, pr
 		if err != nil {
 			return err
 		}
-		proc := exec.Command(exe, "/firewall", ft.tunGUID.String())
+		proc := exec.Command(exe, "-firewall", "-tunGUID", ft.tunGUID.String())
 		in, err := proc.StdinPipe()
 		if err != nil {
 			return err

@@ -159,7 +159,7 @@ func (service *ipnService) Execute(args []string, r <-chan svc.ChangeRequest, ch
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
-		args := []string{"/subproc", service.Policy.PublicID.String()}
+		args := []string{"-subproc", "-logid", service.Policy.PublicID.String()}
 		// Make a logger without a date prefix, as filelogger
 		// and logtail both already add their own. All we really want
 		// from the log package is the automatic newline.
@@ -259,10 +259,10 @@ func beWindowsSubprocess() bool {
 		return true
 	}
 
-	if len(os.Args) != 3 || os.Args[1] != "/subproc" {
+	if len(os.Args) != 4 || os.Args[1] != "-subproc" {
 		return false
 	}
-	logid := os.Args[2]
+	logid := os.Args[3]
 
 	// Remove the date/time prefix; the logtail + file loggers add it.
 	log.SetFlags(0)
@@ -298,16 +298,16 @@ func beWindowsSubprocess() bool {
 }
 
 func beFirewallKillswitch() bool {
-	if len(os.Args) != 3 || os.Args[1] != "/firewall" {
+	if len(os.Args) != 4 || os.Args[1] != "-firewall" {
 		return false
 	}
 
 	log.SetFlags(0)
-	log.Printf("killswitch subprocess starting, tailscale GUID is %s", os.Args[2])
+	log.Printf("killswitch subprocess starting, tailscale GUID is %s", os.Args[3])
 
-	guid, err := windows.GUIDFromString(os.Args[2])
+	guid, err := windows.GUIDFromString(os.Args[3])
 	if err != nil {
-		log.Fatalf("invalid GUID %q: %v", os.Args[2], err)
+		log.Fatalf("invalid GUID %q: %v", os.Args[3], err)
 	}
 
 	luid, err := winipcfg.LUIDFromGUID(&guid)
