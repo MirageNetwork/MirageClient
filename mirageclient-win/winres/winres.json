@@ -15,7 +15,7 @@
         },
         "description": "",
         "minimum-os": "win7",
-        "execution-level": "administrator",
+        "execution-level": "",
         "ui-access": false,
         "auto-elevate": false,
         "dpi-awareness": "per monitor v2",
