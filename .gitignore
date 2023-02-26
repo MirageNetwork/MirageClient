@@ -10,6 +10,8 @@
 mirage
 miraged
 
+.github/workflows
+
 cmd/tailscale/tailscale
 cmd/tailscaled/tailscaled
 
