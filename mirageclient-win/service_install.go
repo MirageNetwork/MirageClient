@@ -9,11 +9,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"syscall"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
@@ -154,12 +154,12 @@ func elevateToStartService() error {
 
 	exePath, err := os.Executable()
 	if err != nil {
-		log.Error().Msgf("获取当前程序路径出错%s", err)
+		log.Fatalf("获取当前程序路径出错%s", err)
 		return err
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		log.Error().Msgf("获取当前程序工作目录出错%s", err)
+		log.Fatalf("获取当前程序工作目录出错%s", err)
 		return err
 	}
 
@@ -175,7 +175,7 @@ func elevateToStartService() error {
 
 	err = windows.ShellExecute(0, verbPtr, exePtr, argPtr, cwdPtr, showCmd)
 	if err != nil {
-		log.Error().Msgf("执行服务安装进程失败：%s", err)
+		log.Fatalf("执行服务安装进程失败：%s", err)
 		return err
 	}
 	/*
@@ -199,14 +199,14 @@ func elevateToStartService() error {
 func isServiceInstalled() bool {
 	m, err := winutil.ConnectToLocalSCMForRead()
 	if err != nil {
-		log.Error().Msgf("Failed to connect to service manager: %v", err)
+		log.Printf("Failed to connect to service manager: %v", err)
 		return false
 	}
 	defer m.Disconnect()
 
 	s, err := winutil.OpenServiceForRead(m, serviceName)
 	if err != nil {
-		log.Error().Msgf("Service %s is not installed", serviceName)
+		log.Printf("Service %s is not installed", serviceName)
 		return false
 	}
 	defer s.Close()
@@ -217,21 +217,21 @@ func isServiceInstalled() bool {
 func isServiceRunning() bool {
 	m, err := winutil.ConnectToLocalSCMForRead()
 	if err != nil {
-		log.Error().Msgf("Failed to connect to service manager: %v", err)
+		log.Printf("Failed to connect to service manager: %v", err)
 		return false
 	}
 	defer m.Disconnect()
 
 	s, err := winutil.OpenServiceForRead(m, serviceName)
 	if err != nil {
-		log.Error().Msgf("Service %s is not installed", serviceName)
+		log.Printf("Service %s is not installed", serviceName)
 		return false
 	}
 	defer s.Close()
 
 	status, err := s.Query()
 	if err != nil {
-		log.Error().Msgf("Failed to get status for %s: %v", serviceName, err)
+		log.Printf("Failed to get status for %s: %v", serviceName, err)
 		return false
 	}
 	return status.State == svc.Running
@@ -240,20 +240,20 @@ func isServiceRunning() bool {
 func startService() error {
 	m, err := mgr.Connect()
 	if err != nil {
-		log.Error().Msgf("Failed to connect to service manager: %v", err)
+		log.Printf("Failed to connect to service manager: %v", err)
 		return err
 	}
 	defer m.Disconnect()
 
 	s, err := m.OpenService(serviceName)
 	if err != nil {
-		log.Error().Msgf("Service %s is not installed", serviceName)
+		log.Printf("Service %s is not installed", serviceName)
 		return err
 	}
 	defer s.Close()
 	status, err := s.Query()
 	if err != nil {
-		log.Error().Msgf("Service %s is not installed", serviceName)
+		log.Printf("Service %s is not installed", serviceName)
 		return err
 	}
 	for status.State != svc.Running && status.State != svc.Paused && status.State != svc.Stopped && err == nil {
@@ -275,7 +275,7 @@ func beServiceInstaller() bool {
 	if !isServiceInstalled() {
 		err := installSystemDaemonWindows()
 		if err != nil {
-			log.Fatal().Msgf("服务安装执行失败")
+			log.Fatalf("服务安装执行失败")
 			return true
 		}
 	}
@@ -284,7 +284,7 @@ func beServiceInstaller() bool {
 		select {
 		case <-time.Tick(time.Second):
 		case <-time.After(time.Second * 20):
-			log.Fatal().Msgf("服务未能安装")
+			log.Fatalf("服务未能安装")
 			return true
 		}
 	}
@@ -292,7 +292,7 @@ func beServiceInstaller() bool {
 	if !isServiceRunning() {
 		err := startService()
 		if err != nil {
-			log.Fatal().Msgf("服务启动执行失败")
+			log.Fatalf("服务启动执行失败")
 			return true
 		}
 	}
@@ -302,11 +302,11 @@ func beServiceInstaller() bool {
 		case <-time.Tick(time.Second * 10):
 			err := startService()
 			if err != nil {
-				log.Fatal().Msgf("服务启动执行失败")
+				log.Fatalf("服务启动执行失败")
 				return true
 			}
 		case <-time.After(time.Second * 60):
-			log.Fatal().Msgf("服务未能启动")
+			log.Fatalf("服务未能启动")
 			return true
 		}
 	}

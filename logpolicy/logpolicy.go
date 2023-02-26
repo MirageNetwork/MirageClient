@@ -205,7 +205,7 @@ func logsDir(logf logger.Logf) string {
 
 	switch runtime.GOOS {
 	case "windows":
-		if version.CmdName() == "miraged" {
+		if len(os.Args) > 1 && os.Args[1] == "-subproc" { // cgao6:我们的架构只有一个可执行文件，不能根据文件名判断 version.CmdName() == "miraged" {
 			// In the common case, when tailscaled is run as the Local System (as a service),
 			// we want to use %ProgramData% (C:\ProgramData\Tailscale), aside the
 			// system state config with the machine key, etc. But if that directory's
@@ -601,8 +601,8 @@ func NewWithConfigPath(collection, dir, cmdName string) *Policy {
 
 	if runtime.GOOS == "windows" && conf.Collection == logtail.CollectionNode {
 		logID := newc.PublicID.String()
-		exe, _ := os.Executable()
-		if strings.EqualFold(filepath.Base(exe), "miraged.exe") {
+		//cgao6: 我们单一可执行，不能用文件名判断		exe, _ := os.Executable()
+		if len(os.Args) > 1 && os.Args[1] == "-subproc" { // strings.EqualFold(filepath.Base(exe), "miraged.exe") {
 			diskLogf := filelogger.New("mirage-service", logID, lw.Logf)
 			logOutput = logger.FuncWriter(diskLogf)
 		}

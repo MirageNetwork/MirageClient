@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
-	"github.com/rs/zerolog/log"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.zx2c4.com/wintun"
@@ -44,7 +44,7 @@ func (service *ipnService) Execute(args []string, r <-chan svc.ChangeRequest, ch
 	go func() { // 实质启动daemon子进程
 		defer close(doneCh)
 		args := []string{"-subproc", "-logid", service.Policy.PublicID.String()} //传递子进程指示参数和logtail ID参数
-		logger := log.Logger
+		logger := log.New(log.Default().Writer(), "", 0)
 		babysitProc(ctx, args, logger.Printf)
 	}()
 
@@ -135,13 +135,13 @@ func cmdName(c svc.Cmd) string {
 func uninstallWinTun() {
 	dll := windows.NewLazyDLL("wintun.dll")
 	if err := dll.Load(); err != nil {
-		log.Error().Caller().Msgf("Cannot load wintun.dll for uninstall: %v", err)
+		log.Printf("Cannot load wintun.dll for uninstall: %v", err)
 		return
 	}
 
-	log.Error().Caller().Msgf("Removing wintun driver...")
+	log.Printf("Removing wintun driver...")
 	err := wintun.Uninstall()
-	log.Error().Caller().Msgf("Uninstall: %v", err)
+	log.Printf("Uninstall: %v", err)
 }
 
 func handleSessionChange(chgRequest svc.ChangeRequest) {
@@ -161,7 +161,7 @@ func handleSessionChange(chgRequest svc.ChangeRequest) {
 func isWindowsService() bool {
 	v, err := svc.IsWindowsService()
 	if err != nil {
-		log.Fatal().Msgf("svc.IsWindowsService failed: %v", err)
+		log.Fatalf("svc.IsWindowsService failed: %v", err)
 	}
 	return v
 }

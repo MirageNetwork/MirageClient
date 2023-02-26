@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -21,8 +22,6 @@ import (
 	"unsafe"
 
 	"github.com/dblohm7/wingoes/com"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"github.com/tailscale/wireguard-go/tun"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
@@ -77,36 +76,33 @@ type serverOptions struct {
 func beWindowsSubprocess() bool {
 	exePath, err := os.Executable()
 	if err != nil {
-		log.Error().Caller().Msgf("无法获取当前执行路径")
+		log.Printf("无法获取当前执行路径")
 	}
 	err = windows.SetDllDirectory(filepath.Dir(exePath))
 	if err != nil {
-		log.Error().Caller().Msgf("无法设置DLL目录")
+		log.Fatalf("无法设置DLL目录")
 	}
 
-	if !args.debugDaemon {
-		if beFirewallKillswitch() { // 处理防火墙设置调用
-			return true
-		}
-
-		if !args.asServiceSubProc { // 非防火墙设置和子进程
-			return false
-		}
+	if beFirewallKillswitch() { // 处理防火墙设置调用
+		return true
 	}
+
+	if !args.asServiceSubProc { // 非防火墙设置和子进程
+		return false
+	}
+
 	logid := args.logid // 传入的logtail ID
 
-	if args.debugDaemon {
-		logid = "debug-logid"
-	}
-
-	file, err := os.OpenFile(filepath.Join(program_path, serviceName+".log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	defer file.Close()
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to open log file")
-	}
-	// 创建新的日志记录器
-	logger := zerolog.New(file).With().Timestamp().Logger()
-	log.Logger = logger
+	/*
+		file, err := os.OpenFile(filepath.Join(program_path, serviceName+".log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		defer file.Close()
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to open log file")
+		}
+		// 创建新的日志记录器
+		logger := zerolog.New(file).With().Timestamp().Logger()
+		log.Logger = logger
+	*/
 
 	log.Printf("Program starting: v%v: %#v", version.Long(), os.Args)
 	log.Printf("subproc mode: logid=%v", logid)
@@ -126,14 +122,14 @@ func beWindowsSubprocess() bool {
 				return
 			}
 			if err != nil {
-				log.Fatal().Msgf("stdin err (parent process died): %v", err)
+				log.Fatalf("stdin err (parent process died): %v", err)
 			}
 		}
 	}()
 
 	err = StartDaemon(ctx, log.Printf, logid)
 	if err != nil {
-		log.Fatal().Msgf("ipnserver: %v", err)
+		log.Fatalf("ipnserver: %v", err)
 	}
 	return true
 }
@@ -143,22 +139,22 @@ func beFirewallKillswitch() bool {
 	if !args.asFirewallKillswitch {
 		return false
 	}
-	log.Debug().Msgf("killswitch subprocess starting, Mirage GUID is %s", args.tunGUID)
+	log.Printf("killswitch subprocess starting, Mirage GUID is %s", args.tunGUID)
 
 	guid, err := windows.GUIDFromString(args.tunGUID)
 	if err != nil {
-		log.Fatal().Msgf("invalid GUID %q: %v", args.tunGUID, err)
+		log.Fatalf("invalid GUID %q: %v", args.tunGUID, err)
 	}
 
 	luid, err := winipcfg.LUIDFromGUID(&guid)
 	if err != nil {
-		log.Fatal().Msgf("no interface with GUID %q: %v", guid, err)
+		log.Fatalf("no interface with GUID %q: %v", guid, err)
 	}
 
 	start := time.Now()
 	fw, err := wf.New(uint64(luid))
 	if err != nil {
-		log.Fatal().Msgf("failed to enable firewall: %v", err)
+		log.Fatalf("failed to enable firewall: %v", err)
 	}
 	log.Printf("killswitch enabled, took %s", time.Since(start))
 
@@ -169,10 +165,10 @@ func beFirewallKillswitch() bool {
 	for {
 		var routes []netip.Prefix
 		if err := dcd.Decode(&routes); err != nil {
-			log.Fatal().Msgf("parent process died or requested exit, exiting (%v)", err)
+			log.Fatalf("parent process died or requested exit, exiting (%v)", err)
 		}
 		if err := fw.UpdatePermittedRoutes(routes); err != nil {
-			log.Fatal().Msgf("failed to update routes (%v)", err)
+			log.Fatalf("failed to update routes (%v)", err)
 		}
 	}
 }
@@ -309,7 +305,7 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logid string) (_ *ip
 	})
 
 	if err := ns.Start(lb); err != nil {
-		log.Fatal().Msgf("failed to start netstack: %v", err)
+		log.Fatalf("failed to start netstack: %v", err)
 	}
 	return lb, nil
 }

@@ -6,13 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/skratchdot/open-golang/open"
 	"tailscale.com/ipn"
 )
@@ -104,15 +104,13 @@ func WatchDaemon(ctx context.Context) {
 	retryCounter := 3
 	for {
 		if err == nil {
-			log.Error().
-				Msg("守护进程监听管道建立完成")
+			log.Printf("守护进程监听管道建立完成")
 			break
 		} else if retryCounter < 0 {
 			logNotify("无法建立守护进程监听管道", err)
 			return // Todo
 		}
-		log.Error().
-			Msg("守护进程监听管道建立失败,等待1秒重试:" + err.Error())
+		log.Printf("守护进程监听管道建立失败,等待1秒重试:" + err.Error())
 		<-time.After(time.Second * 1)
 		retryCounter--
 		watcher, err = LC.WatchIPNBus(watchCtx, 0)

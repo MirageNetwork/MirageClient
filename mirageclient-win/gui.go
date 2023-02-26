@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"log"
 	"net/netip"
 	"strings"
 	"sync"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/gen2brain/beeep"
-	"github.com/rs/zerolog/log"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/mirageclient-win/resource"
 	"tailscale.com/mirageclient-win/systray"
@@ -566,7 +566,7 @@ func (s *MiraMenu) setErr() {
 }
 func logNotify(msg string, err error) {
 	if err != nil {
-		log.Error().Msg(msg + err.Error())
+		log.Printf(msg + err.Error())
 	}
 	beeep.Notify(app_name, msg, logo_png)
 }

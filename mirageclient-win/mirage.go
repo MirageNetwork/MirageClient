@@ -7,10 +7,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/ncruces/zenity"
+	"golang.org/x/sys/windows/svc"
 	"tailscale.com/envknob"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
@@ -27,7 +29,6 @@ import (
 	"tailscale.com/client/tailscale"
 
 	"github.com/atotto/clipboard"
-	"github.com/rs/zerolog/log"
 )
 
 var backVersion string
@@ -49,8 +50,6 @@ var stRunCh chan bool
 var logPol *logpolicy.Policy // 日志策略（后台服务logtail使用）
 
 var args struct { // 命令行参数部分
-	debugDaemon bool // 仅用于方便调试服务的daemon
-
 	asServiceInstaller   bool   // 执行服务安装
 	asFirewallKillswitch bool   // 执行防火墙调整（被wgengine调用）
 	tunGUID              string // 执行防火墙调整参数
@@ -70,13 +69,6 @@ func main() {
 	//fmt.Println(err1)
 	// cgao6: 以上仅调试时使用，发布时切勿开启
 
-	envknob.PanicIfAnyEnvCheckedInInit()
-	envknob.ApplyDiskConfig()
-	// 开局先屏蔽TS的日志 （但后续保留日志设置，以防后续我们希望使用logtail）
-	envknob.SetNoLogsNoSupport()
-
-	flag.BoolVar(&args.debugDaemon, "debugD", false, "调试后台服务")
-
 	flag.BoolVar(&args.asServiceInstaller, "install", false, "安装后台服务")
 	flag.BoolVar(&args.asFirewallKillswitch, "firewall", false, "管理防火墙")
 	flag.StringVar(&args.tunGUID, "tunGUID", "", "管理防火墙使用tun的GUID值")
@@ -84,24 +76,13 @@ func main() {
 	flag.StringVar(&args.logid, "logid", "", "服务子进程使用的logtail ID值")
 	flag.Parse()
 
-	// 判断是否调试daemon
-	if args.debugDaemon {
-		beWindowsSubprocess()
-		return
-	}
+	isService, err := svc.IsWindowsService()
+	if args.asServiceInstaller || args.asFirewallKillswitch || args.asServiceSubProc || isService {
+		envknob.PanicIfAnyEnvCheckedInInit()
+		envknob.ApplyDiskConfig()
+		// 开局先屏蔽TS的日志 （但后续保留日志设置，以防后续我们希望使用logtail）
+		envknob.SetNoLogsNoSupport()
 
-	// 判断是否是服务安装
-	if beServiceInstaller() {
-		return //结束安装
-	}
-
-	// 判断是否子进程
-	if beWindowsSubprocess() {
-		return //结束子进程
-	}
-
-	// 判断是Win服务调用则执行服务方法，并以子进程重调此程序
-	if isWindowsService() {
 		pol := logpolicy.New(logtail.CollectionNode)
 		pol.SetVerbosityLevel(0) // 日志级别，越往上级别越高
 		logPol = pol
@@ -111,18 +92,31 @@ func main() {
 			defer cancel()
 			pol.Shutdown(ctx)
 		}()
-		log.Info().Msgf("Running service...")
-		if err := runWindowsService(pol); err != nil {
-			log.Error().Msgf("runservice: %v", err)
-		}
-		log.Info().Msgf("Stopped file sharing.")
-		osshare.SetFileSharingEnabled(false, logger.Discard)
-		log.Info().Msgf("Service ended.")
-		return //结束服务
-	}
 
+		// 判断是否是服务安装
+		if beServiceInstaller() {
+			return //结束安装
+		}
+
+		// 判断是否子进程
+		if beWindowsSubprocess() {
+			return //结束子进程
+		}
+
+		// 判断是Win服务调用则执行服务方法，并以子进程重调此程序
+		if isWindowsService() {
+			log.Printf("Running service...")
+			if err := runWindowsService(pol); err != nil {
+				log.Printf("runservice: %v", err)
+			}
+			log.Printf("Stopped file sharing.")
+			osshare.SetFileSharingEnabled(false, logger.Discard)
+			log.Printf("Service ended.")
+			return //结束服务
+		}
+	}
 	// 客户端要保证单一进程
-	_, err := winutil.CreateAppMutex("MirageWin")
+	_, err = winutil.CreateAppMutex("MirageWin")
 	//_, err := CreateMutex("MirageWin")
 	if err != nil {
 		return
@@ -288,9 +282,9 @@ func onReady() {
 				open.Run(control_url + "/admin")
 			case <-gui.loginMenu.ClickedCh:
 				serverCodeData, err := LC.GetStore(ctx, string(ipn.CurrentServerCodeKey))
-				if err != nil && err != ipn.ErrStateNotExist {
+				if err != nil && !strings.Contains(err.Error(), ipn.ErrStateNotExist.Error()) {
 					logNotify("读取服务器代码出错", err)
-				} else if err == ipn.ErrStateNotExist || serverCodeData == nil || string(serverCodeData) == "" {
+				} else if err != nil && strings.Contains(err.Error(), ipn.ErrStateNotExist.Error()) || serverCodeData == nil || string(serverCodeData) == "" {
 					newServerCode, err := zenity.Entry("请输入您接入的控制器代码（留空默认）:",
 						zenity.WindowIcon(logo_png),
 						zenity.Title("初始化"),
@@ -376,7 +370,7 @@ func doConn() {
 		WantRunningSet: true,
 	})
 	if err != nil {
-		log.Error().Msg("Change state to run failed!")
+		log.Printf("Change state to run failed!")
 		return
 	}
 }
@@ -384,7 +378,7 @@ func doConn() {
 func doDisconn() {
 	st, err := LC.Status(ctx)
 	if err != nil {
-		log.Error().Msg("Get current status failed!")
+		log.Printf("Get current status failed!")
 		return
 	}
 	if st.BackendState == "Running" || st.BackendState == "Starting" {
@@ -395,7 +389,7 @@ func doDisconn() {
 			WantRunningSet: true,
 		})
 		if err != nil {
-			log.Error().Msg("Disconnect failed!")
+			log.Printf("Disconnect failed!")
 		}
 	}
 }
@@ -403,8 +397,7 @@ func doDisconn() {
 func getST() *ipnstate.Status {
 	st, err := LC.Status(ctx)
 	if err != nil || st == nil {
-		log.Error().
-			Msg(`Get Status ERROR!`)
+		log.Printf(`Get Status ERROR!`)
 		return nil
 	} else {
 		backVersion = "蜃境" + strings.Split(st.Version, "-")[0]
