@@ -36,14 +36,6 @@ var LC tailscale.LocalClient
 
 var magicVersionCounter int
 
-type NotifyType int
-
-const (
-	OpenURL NotifyType = iota
-	RestartDaemon
-	IntoRunning
-)
-
 var netMapChn chan bool
 var prefChn chan bool
 
@@ -157,6 +149,8 @@ func main() {
 
 	onExit := func() {
 	}
+
+	defer onExit()
 
 	systray.Run(onReady, onExit)
 }
