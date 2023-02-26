@@ -157,11 +157,6 @@ func (pm *profileManager) findProfileByKey(key ipn.StateKey) *ipn.LoginProfile {
 	return out[0]
 }
 
-// cgao6: we can set the server code due to user's req
-func (pm *profileManager) SetServerNodeKey(srvCode string) error {
-	return pm.store.WriteState(ipn.CurrentServerCodeKey, []byte(srvCode))
-}
-
 func (pm *profileManager) setUnattendedModeAsConfigured() error {
 	if pm.currentUserID == "" {
 		return nil
@@ -468,16 +463,6 @@ func ReadStartupPrefsForTest(logf logger.Logf, store ipn.StateStore) (ipn.PrefsV
 // It also loads the list of known profiles from the StateStore.
 func newProfileManager(store ipn.StateStore, logf logger.Logf) (*profileManager, error) {
 	return newProfileManagerWithGOOS(store, logf, envknob.GOOS())
-}
-
-// cgao6: get servercode
-func (pm *profileManager) ReadServerCodeKey() (string, error) {
-	serverCodeKey := ipn.CurrentServerCodeKey
-	serverKey, err := pm.store.ReadState(serverCodeKey)
-	if err != nil && err != ipn.ErrStateNotExist {
-		return "", fmt.Errorf("calling ReadState on state store: %w", err)
-	}
-	return string(serverKey), nil
 }
 
 func readAutoStartKey(store ipn.StateStore, goos string) (ipn.StateKey, error) {

@@ -4,9 +4,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/http/pprof"
 	"net/netip"
 	"os"
 	"os/signal"
@@ -17,9 +21,11 @@ import (
 	"unsafe"
 
 	"github.com/dblohm7/wingoes/com"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tailscale/wireguard-go/tun"
 	"golang.org/x/sys/windows"
+	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 	"tailscale.com/control/controlclient"
 	"tailscale.com/envknob"
 	"tailscale.com/ipn/ipnlocal"
@@ -37,15 +43,22 @@ import (
 	"tailscale.com/types/logger"
 	"tailscale.com/util/multierr"
 	"tailscale.com/util/winutil"
+	"tailscale.com/version"
+	"tailscale.com/wf"
 	"tailscale.com/wgengine"
 	"tailscale.com/wgengine/monitor"
 	"tailscale.com/wgengine/netstack"
 	"tailscale.com/wgengine/router"
 )
 
+var debugMux *http.ServeMux
+
 func init() {
 	// Initialize COM process-wide
-	comProcessType := com.GUIApp
+	comProcessType := com.Service
+	if !isWindowsService() {
+		comProcessType = com.GUIApp
+	}
 	if err := com.StartRuntime(comProcessType); err != nil {
 		log.Printf("wingoes.com.StartRuntime(%d) failed: %v", comProcessType, err)
 	}
@@ -56,41 +69,123 @@ func init() {
 }
 
 type serverOptions struct {
-	VarRoot string
-
+	VarRoot    string
 	LoginFlags controlclient.LoginFlags
 }
 
-func StartDaemon(ctx context.Context, cleanup bool, lbChn chan *ipnlocal.LocalBackend) {
+// 如果是服务调用的子进程
+func beWindowsSubprocess() bool {
+	exePath, err := os.Executable()
+	if err != nil {
+		log.Error().Caller().Msgf("无法获取当前执行路径")
+	}
+	err = windows.SetDllDirectory(filepath.Dir(exePath))
+	if err != nil {
+		log.Error().Caller().Msgf("无法设置DLL目录")
+	}
 
-	envknob.PanicIfAnyEnvCheckedInInit()
-	envknob.ApplyDiskConfig()
-	envknob.SetNoLogsNoSupport()
+	if !args.debugDaemon {
+		if beFirewallKillswitch() { // 处理防火墙设置调用
+			return true
+		}
 
+		if !args.asServiceSubProc { // 非防火墙设置和子进程
+			return false
+		}
+	}
+	logid := args.logid // 传入的logtail ID
+
+	if args.debugDaemon {
+		logid = "debug-logid"
+	}
+
+	file, err := os.OpenFile(filepath.Join(program_path, serviceName+".log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	defer file.Close()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to open log file")
+	}
+	// 创建新的日志记录器
+	logger := zerolog.New(file).With().Timestamp().Logger()
+	log.Logger = logger
+
+	log.Printf("Program starting: v%v: %#v", version.Long(), os.Args)
+	log.Printf("subproc mode: logid=%v", logid)
 	if err := envknob.ApplyDiskConfigError(); err != nil {
 		log.Printf("Error reading environment config: %v", err)
 	}
 
-	var logf logger.Logf = log.Printf
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		b := make([]byte, 16)
+		for {
+			_, err := os.Stdin.Read(b)
+			if err == io.EOF {
+				// Parent wants us to shut down gracefully.
+				log.Printf("subproc received EOF from stdin")
+				cancel()
+				return
+			}
+			if err != nil {
+				log.Fatal().Msgf("stdin err (parent process died): %v", err)
+			}
+		}
+	}()
 
-	logf = logger.RateLimitedFn(logf, 5*time.Second, 5, 100)
+	err = StartDaemon(ctx, log.Printf, logid)
+	if err != nil {
+		log.Fatal().Msgf("ipnserver: %v", err)
+	}
+	return true
+}
 
-	if cleanup {
-		dns.Cleanup(logf, tun_name)
-		router.Cleanup(logf, tun_name)
-		return
+// 供wgengine设置防火墙管理路由调用
+func beFirewallKillswitch() bool {
+	if !args.asFirewallKillswitch {
+		return false
+	}
+	log.Debug().Msgf("killswitch subprocess starting, Mirage GUID is %s", args.tunGUID)
+
+	guid, err := windows.GUIDFromString(args.tunGUID)
+	if err != nil {
+		log.Fatal().Msgf("invalid GUID %q: %v", args.tunGUID, err)
 	}
 
+	luid, err := winipcfg.LUIDFromGUID(&guid)
+	if err != nil {
+		log.Fatal().Msgf("no interface with GUID %q: %v", guid, err)
+	}
+
+	start := time.Now()
+	fw, err := wf.New(uint64(luid))
+	if err != nil {
+		log.Fatal().Msgf("failed to enable firewall: %v", err)
+	}
+	log.Printf("killswitch enabled, took %s", time.Since(start))
+
+	// Note(maisem): when local lan access toggled, tailscaled needs to
+	// inform the firewall to let local routes through. The set of routes
+	// is passed in via stdin encoded in json.
+	dcd := json.NewDecoder(os.Stdin)
+	for {
+		var routes []netip.Prefix
+		if err := dcd.Decode(&routes); err != nil {
+			log.Fatal().Msgf("parent process died or requested exit, exiting (%v)", err)
+		}
+		if err := fw.UpdatePermittedRoutes(routes); err != nil {
+			log.Fatal().Msgf("failed to update routes (%v)", err)
+		}
+	}
+}
+
+// 实际创建daemon IPN
+func StartDaemon(ctx context.Context, logf logger.Logf, logid string) error { // lbChn chan *ipnlocal.LocalBackend) {
 	ln, err := safesocket.Listen(socket_path)
 	if err != nil {
-		logNotify("[守护进程]\n监听创建失败", err)
-		return
+		return fmt.Errorf("safesocket.Listen: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	defer func() {
-		cancel()
-	}()
+	defer cancel()
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -98,51 +193,58 @@ func StartDaemon(ctx context.Context, cleanup bool, lbChn chan *ipnlocal.LocalBa
 	go func() {
 		select {
 		case s := <-interrupt:
-			logf("tailscaled got signal %v; shutting down", s)
+			logf("miraged got signal %v; shutting down", s)
 			cancel()
 		case <-ctx.Done():
-			cancel()
+			// 继续
 		}
 	}()
 
-	srv := ipnserver.New(logf, log_id)
+	srv := ipnserver.New(logf, logid)
+
+	// 先留调试接口
+	debugMux = http.NewServeMux()
+	debugMux.HandleFunc("/debug/pprof/", pprof.Index)
+	debugMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	debugMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	debugMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	debugMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	debugMux.HandleFunc("/debug/ipn", srv.ServeHTMLStatus)
+
 	var lbErr syncs.AtomicValue[error]
 
-	go func(lbChan chan *ipnlocal.LocalBackend) {
+	go func() {
 		t0 := time.Now()
-		lb, err := getLocalBackend(ctx, logf, log_id)
+		lb, err := getLocalBackend(ctx, logf, logid)
 		if err == nil {
 			logf("got LocalBackend in %v", time.Since(t0).Round(time.Millisecond))
 			srv.SetLocalBackend(lb)
-			lbChan <- lb
 			return
 		}
 		lbErr.Store(err) // before the following cancel
 		cancel()         // make srv.Run below complete
-	}(lbChn)
-
-	watcherUpCh <- true // can startWatcher now
+	}()
 
 	err = srv.Run(ctx, ln)
 
 	if err != nil && lbErr.Load() != nil {
-		logNotify("[守护进程]\ngetLocalBackend error", errors.New(lbErr.Load().Error()))
-		return
+		return fmt.Errorf("getLocalBackend error: %v", lbErr.Load())
 	}
 
 	// Cancelation is not an error: it is the only way to stop ipnserver.
 	if err != nil && !errors.Is(err, context.Canceled) {
-		logNotify("[守护进程]\nipnserver.Run error", errors.New(err.Error()))
-		return
+		return fmt.Errorf("ipnserver.Run: %w", err)
 	}
-
-	return
+	return nil
 }
 
 func getLocalBackend(ctx context.Context, logf logger.Logf, logid string) (_ *ipnlocal.LocalBackend, retErr error) {
 	linkMon, err := monitor.New(logf)
 	if err != nil {
 		return nil, fmt.Errorf("monitor.New: %w", err)
+	}
+	if logPol != nil {
+		logPol.Logtail.SetLinkMonitor(linkMon)
 	}
 
 	dialer := &tsdial.Dialer{Logf: logf} // mutated below (before used)
@@ -152,6 +254,14 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logid string) (_ *ip
 	}
 	if _, ok := e.(wgengine.ResolvingEngine).GetResolver(); !ok {
 		panic("internal error: exit node resolver not wired up")
+	}
+	if debugMux != nil {
+		if ig, ok := e.(wgengine.InternalsGetter); ok {
+			if _, mc, _, ok := ig.GetInternals(); ok {
+				debugMux.HandleFunc("/debug/magicsock", mc.ServeHTTPDebug)
+			}
+		}
+		go runDebugServer(debugMux, debugPort)
 	}
 
 	ns, err := newNetstack(logf, dialer, e)
@@ -173,9 +283,11 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logid string) (_ *ip
 
 	e = wgengine.NewWatchdog(e)
 
-	opts := ipnServerOpts()
+	opts := serverOptions{
+		VarRoot: program_path,
+	}
 
-	store, err := store.New(logf, state_path)
+	store, err := store.New(logf, filepath.Join(program_path, "server-state.conf"))
 	if err != nil {
 		return nil, fmt.Errorf("store.New: %w", err)
 	}
@@ -186,6 +298,9 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logid string) (_ *ip
 		return nil, fmt.Errorf("ipnlocal.NewLocalBackend: %w", err)
 	}
 	lb.SetVarRoot(opts.VarRoot)
+	if logPol != nil {
+		lb.SetLogFlusher(logPol.Logtail.StartFlush)
+	}
 	if root := lb.TailscaleVarRoot(); root != "" {
 		dnsfallback.SetCachePath(filepath.Join(root, "derpmap.cached.json"))
 	}
@@ -194,14 +309,14 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logid string) (_ *ip
 	})
 
 	if err := ns.Start(lb); err != nil {
-		logNotify("[守护进程]\nfailed to start netstack", errors.New(err.Error()))
+		log.Fatal().Msgf("failed to start netstack: %v", err)
 	}
 	return lb, nil
 }
 
 func createEngine(logf logger.Logf, linkMon *monitor.Mon, dialer *tsdial.Dialer) (e wgengine.Engine, onlyNetstack bool, err error) {
 	var errs []error
-	for _, name := range strings.Split(tun_name, ",") {
+	for _, name := range strings.Split(serviceName, ",") {
 		logf("wgengine.NewUserspaceEngine(tun %q) ...", name)
 		e, onlyNetstack, err = tryEngine(logf, linkMon, dialer, name)
 		if err == nil {
@@ -213,14 +328,6 @@ func createEngine(logf logger.Logf, linkMon *monitor.Mon, dialer *tsdial.Dialer)
 	return nil, false, multierr.New(errs...)
 }
 
-func ipnServerOpts() (o serverOptions) {
-	if dir := filepath.Dir(state_path); strings.EqualFold(filepath.Base(dir), "Mirage") {
-		o.VarRoot = dir
-	}
-
-	return o
-}
-
 var tstunNew = tstun.New
 
 func tryEngine(logf logger.Logf, linkMon *monitor.Mon, dialer *tsdial.Dialer, name string) (e wgengine.Engine, onlyNetstack bool, err error) {
@@ -229,35 +336,38 @@ func tryEngine(logf logger.Logf, linkMon *monitor.Mon, dialer *tsdial.Dialer, na
 		LinkMonitor: linkMon,
 		Dialer:      dialer,
 	}
+	onlyNetstack = false
 	netns.SetEnabled(true)
 
-	dev, devName, err := tstunNew(logf, name)
-	if err != nil {
-		tstun.Diagnose(logf, name, err)
-		return nil, false, fmt.Errorf("tstun.New(%q): %w", name, err)
-	}
-	conf.Tun = dev
-	if strings.HasPrefix(name, "tap:") {
-		conf.IsTAP = true
-		e, err := wgengine.NewUserspaceEngine(logf, conf)
-		return e, false, err
-	}
+	if !onlyNetstack {
+		dev, devName, err := tstunNew(logf, name)
 
-	r, err := router.New(logf, dev, linkMon)
-	if err != nil {
-		dev.Close()
-		return nil, false, fmt.Errorf("creating router: %w", err)
-	}
-	d, err := dns.NewOSConfigurator(logf, devName)
-	if err != nil {
-		dev.Close()
-		r.Close()
-		return nil, false, fmt.Errorf("dns.NewOSConfigurator: %w", err)
-	}
-	conf.DNS = d
-	conf.Router = r
-	conf.Router = netstack.NewSubnetRouterWrapper(conf.Router)
+		if err != nil {
+			tstun.Diagnose(logf, name, err)
+			return nil, false, fmt.Errorf("tstun.New(%q): %w", name, err)
+		}
+		conf.Tun = dev
+		if strings.HasPrefix(name, "tap:") {
+			conf.IsTAP = true
+			e, err := wgengine.NewUserspaceEngine(logf, conf)
+			return e, false, err
+		}
 
+		r, err := router.New(logf, dev, linkMon)
+		if err != nil {
+			dev.Close()
+			return nil, false, fmt.Errorf("creating router: %w", err)
+		}
+		d, err := dns.NewOSConfigurator(logf, devName)
+		if err != nil {
+			dev.Close()
+			r.Close()
+			return nil, false, fmt.Errorf("dns.NewOSConfigurator: %w", err)
+		}
+		conf.DNS = d
+		conf.Router = r
+		conf.Router = netstack.NewSubnetRouterWrapper(conf.Router)
+	}
 	e, err = wgengine.NewUserspaceEngine(logf, conf)
 	if err != nil {
 		return nil, false, err

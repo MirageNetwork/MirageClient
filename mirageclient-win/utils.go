@@ -19,16 +19,13 @@ import (
 	"tailscale.com/types/preftype"
 )
 
-var logo_png string = "./logo.png"
-var app_name string = "蜃境"
+const logo_png string = "./logo.png"
+const app_name string = "蜃境"
+const serviceName string = "Mirage"
+const socket_path string = `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
+const engine_port uint16 = 0 //动态端口机制
+var program_path string = filepath.Join(os.Getenv("ProgramData"), serviceName)
 var control_url string = "https://sdp.ipv4.uk" //TODO: 改为读取conf文件，首次通过gui设置
-var console_url string = control_url + "/admin"
-var socket_path string = `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
-var state_path string = filepath.Join(os.Getenv("ProgramData"), "Mirage", "server-state.conf")
-var pref_path string = filepath.Join(os.Getenv("ProgramData"), "Mirage", "pref.conf")
-var tun_name string = "Mirage"
-var log_id string = "Mirage"
-var engine_port uint16 = 0 //动态端口机制
 
 var (
 	ipv4default = netip.MustParsePrefix("0.0.0.0/0")

@@ -4687,6 +4687,39 @@ func (b *LocalBackend) SetDevStateStore(key, value string) error {
 	return nil
 }
 
+// cgao6: 我们从官方版本做一个固定的接口出来
+func (b *LocalBackend) SetStateStore(key, value string) error {
+	if b.store == nil {
+		return errors.New("no state store")
+	}
+	err := b.store.WriteState(ipn.StateKey(key), []byte(value))
+	b.logf("SetStateStore(%q, %q) = %v", key, value, err)
+
+	if err != nil {
+		return err
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.setTCPPortsInterceptedFromNetmapAndPrefsLocked(b.pm.CurrentPrefs())
+
+	return nil
+}
+
+// cgao6: 再尝试做一个读版本
+func (b *LocalBackend) GetStateStore(key string) ([]byte, error) {
+	if b.store == nil {
+		return nil, errors.New("no state store")
+	}
+	value, err := b.store.ReadState(ipn.StateKey(key))
+	b.logf("GetStateStore(%q, %q) = %v", key, string(value), err)
+
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
 // ShouldInterceptTCPPort reports whether the given TCP port number to a
 // Tailscale IP (not a subnet router, service IP, etc) should be intercepted by
 // Tailscaled and handled in-process.
@@ -4784,26 +4817,6 @@ func (b *LocalBackend) DeleteProfile(p ipn.ProfileID) error {
 		return nil
 	}
 	return b.resetForProfileChangeLockedOnEntry()
-}
-
-// cgao6: to read server code
-func (b *LocalBackend) GetServerCode() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	sn, err := b.pm.ReadServerCodeKey()
-	if err != nil {
-		return ""
-	}
-	return sn
-}
-func (b *LocalBackend) SetServerCode(sn string) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	err := b.pm.SetServerNodeKey(sn)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // CurrentProfile returns the current LoginProfile.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/netip"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/atotto/clipboard"
@@ -318,7 +319,9 @@ func (s *ExitNodeListMenu) Show() {
 	s.TailLine.Show()
 }
 
-type MirageMenu struct {
+type MiraMenu struct {
+	mu sync.Mutex
+
 	isLogoSpin     bool
 	logoSpinChn    chan bool
 	logoSpinFinChn chan bool
@@ -347,14 +350,14 @@ type MirageMenu struct {
 	quitMenu    *systray.MenuItem //退出按钮
 }
 
-func (s *MirageMenu) init() {
-	s.isLogoSpin = false
-	s.logoSpinChn = make(chan bool, 1)
-	s.logoSpinFinChn = make(chan bool, 1)
-
+func (s *MiraMenu) init() {
 	systray.SetIcon(resource.LogoIcon)
 	systray.SetTitle("蜃境")
 	systray.SetTooltip("简单安全的组网工具")
+
+	s.isLogoSpin = false
+	s.logoSpinChn = make(chan bool, 1)
+	s.logoSpinFinChn = make(chan bool, 1)
 
 	s.loginMenu = systray.AddMenuItem("登录…", "点击进行登录")
 	s.connectMenu = systray.AddMenuItem("连接", "点击接入蜃境")
@@ -377,7 +380,8 @@ func (s *MirageMenu) init() {
 	s.quitMenu = systray.AddMenuItem("退出", "退出蜃境")
 }
 
-func (s *MirageMenu) hideAll() {
+func (s *MiraMenu) hideAll() {
+
 	s.loginMenu.Hide()
 	s.connectMenu.Hide()
 	s.disconnMenu.Hide()
@@ -395,7 +399,9 @@ func (s *MirageMenu) hideAll() {
 	s.quitMenu.Hide()
 }
 
-func (s *MirageMenu) setNotLogin(version string) {
+func (s *MiraMenu) setNotLogin(version string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if s.isLogoSpin {
 		s.logoSpinChn <- true
@@ -426,7 +432,9 @@ func (s *MirageMenu) setNotLogin(version string) {
 	s.quitMenu.Show()
 }
 
-func (s *MirageMenu) setStopped(userDisplayName string, version string) {
+func (s *MiraMenu) setStopped(userDisplayName string, version string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if s.isLogoSpin {
 		s.logoSpinChn <- true
@@ -460,7 +468,10 @@ func (s *MirageMenu) setStopped(userDisplayName string, version string) {
 	s.versionMenu.Show()
 	s.quitMenu.Show()
 }
-func (s *MirageMenu) setStarting(userDisplayName string, version string) {
+func (s *MiraMenu) setStarting(userDisplayName string, version string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	go s.logoSpin(300)
 	s.loginMenu.Hide()
 	s.connectMenu.SetTitle("连接中…")
@@ -488,7 +499,10 @@ func (s *MirageMenu) setStarting(userDisplayName string, version string) {
 	s.versionMenu.Show()
 	s.quitMenu.Show()
 }
-func (s *MirageMenu) setRunning(userDisplayName string, nodeDNSName string, nodeMIP string, version string, lastDays string) {
+func (s *MiraMenu) setRunning(userDisplayName string, nodeDNSName string, nodeMIP string, version string, lastDays string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.isLogoSpin {
 		s.logoSpinChn <- true
 		<-s.logoSpinFinChn
@@ -523,8 +537,7 @@ func (s *MirageMenu) setRunning(userDisplayName string, nodeDNSName string, node
 	s.quitMenu.Show()
 }
 
-func (s *MirageMenu) logoSpin(interval time.Duration) {
-
+func (s *MiraMenu) logoSpin(interval time.Duration) {
 	s.isLogoSpin = true
 
 	s.connectMenu.SetTitle("连接中…")
@@ -544,7 +557,10 @@ func (s *MirageMenu) logoSpin(interval time.Duration) {
 	}
 }
 
-func (s *MirageMenu) setErr() {
+func (s *MiraMenu) setErr() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.hideAll()
 	systray.SetIcon(resource.LogoErr)
 }

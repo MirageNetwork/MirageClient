@@ -5,16 +5,22 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/ncruces/zenity"
+	"tailscale.com/envknob"
 	"tailscale.com/ipn"
-	"tailscale.com/ipn/ipnlocal"
 	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/logpolicy"
+	"tailscale.com/logtail"
 	"tailscale.com/mirageclient-win/resource"
 	"tailscale.com/mirageclient-win/systray"
+	"tailscale.com/types/logger"
+	"tailscale.com/util/osshare"
+	"tailscale.com/util/winutil"
 
 	"github.com/skratchdot/open-golang/open"
 
@@ -24,13 +30,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var ctx, ctxD context.Context
-
 var backVersion string
 
 var LC tailscale.LocalClient
-var LBChn chan *ipnlocal.LocalBackend
-var LB *ipnlocal.LocalBackend
 
 var magicVersionCounter int
 
@@ -45,28 +47,104 @@ const (
 var netMapChn chan bool
 var prefChn chan bool
 
-var watcherUpCh chan bool
-
 // some state channel
 var stNeedLoginCh chan bool
 var stStopCh chan bool
 var stStartingCh chan bool
 var stRunCh chan bool
 
-var gui MirageMenu
+// TODO： 以下新版本模式全局变量
+var logPol *logpolicy.Policy // 日志策略（后台服务logtail使用）
+
+var args struct { // 命令行参数部分
+	debugDaemon bool // 仅用于方便调试服务的daemon
+
+	asServiceInstaller   bool   // 执行服务安装
+	asFirewallKillswitch bool   // 执行防火墙调整（被wgengine调用）
+	tunGUID              string // 执行防火墙调整参数
+	asServiceSubProc     bool   // 作为后台服务子进程被调用
+	logid                string // 后台服务日志使用的logtail ID参数
+} // 启动参数
+
+var watcher *MiraWatcher // 通讯协程实体
+var gui MiraMenu         // gui界面实体
+
+var ctx context.Context
+var cancel context.CancelFunc
 
 func main() {
-	_, err := CreateMutex("MirageWin")
+	//err1 := uninstallSystemDaemonWindows()
+	//uninstallWinTun()
+	//fmt.Println(err1)
+	// cgao6: 以上仅调试时使用，发布时切勿开启
+
+	envknob.PanicIfAnyEnvCheckedInInit()
+	envknob.ApplyDiskConfig()
+	// 开局先屏蔽TS的日志 （但后续保留日志设置，以防后续我们希望使用logtail）
+	envknob.SetNoLogsNoSupport()
+
+	flag.BoolVar(&args.debugDaemon, "debugD", false, "调试后台服务")
+
+	flag.BoolVar(&args.asServiceInstaller, "install", false, "安装后台服务")
+	flag.BoolVar(&args.asFirewallKillswitch, "firewall", false, "管理防火墙")
+	flag.StringVar(&args.tunGUID, "tunGUID", "", "管理防火墙使用tun的GUID值")
+	flag.BoolVar(&args.asServiceSubProc, "subproc", false, "是否服务的子进程调用")
+	flag.StringVar(&args.logid, "logid", "", "服务子进程使用的logtail ID值")
+	flag.Parse()
+
+	// 判断是否调试daemon
+	if args.debugDaemon {
+		beWindowsSubprocess()
+		return
+	}
+
+	// 判断是否是服务安装
+	if beServiceInstaller() {
+		return //结束安装
+	}
+
+	// 判断是否子进程
+	if beWindowsSubprocess() {
+		return //结束子进程
+	}
+
+	// 判断是Win服务调用则执行服务方法，并以子进程重调此程序
+	if isWindowsService() {
+		pol := logpolicy.New(logtail.CollectionNode)
+		pol.SetVerbosityLevel(0) // 日志级别，越往上级别越高
+		logPol = pol
+		defer func() {
+			// Finish uploading logs after closing everything else.
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			pol.Shutdown(ctx)
+		}()
+		log.Info().Msgf("Running service...")
+		if err := runWindowsService(pol); err != nil {
+			log.Error().Msgf("runservice: %v", err)
+		}
+		log.Info().Msgf("Stopped file sharing.")
+		osshare.SetFileSharingEnabled(false, logger.Discard)
+		log.Info().Msgf("Service ended.")
+		return //结束服务
+	}
+
+	// 客户端要保证单一进程
+	_, err := winutil.CreateAppMutex("MirageWin")
+	//_, err := CreateMutex("MirageWin")
 	if err != nil {
 		return
 	}
 
+	// 创建与后台服务的通讯员
+	watcher = NewWatcher()
+
+	// 非Win服务则执行后序GUI部分
 	LC = tailscale.LocalClient{
 		Socket:        socket_path,
 		UseSocketOnly: false}
-	ctx = context.Background()
+	ctx, cancel = context.WithCancel(context.Background())
 
-	watcherUpCh = make(chan bool)
 	stNeedLoginCh = make(chan bool)
 	stStopCh = make(chan bool)
 	stStartingCh = make(chan bool)
@@ -75,13 +153,10 @@ func main() {
 	netMapChn = make(chan bool)
 	prefChn = make(chan bool)
 
-	LBChn = make(chan *ipnlocal.LocalBackend)
 	magicVersionCounter = 0
 
 	onExit := func() {
 	}
-
-	go WatchDaemon(ctx)
 
 	systray.Run(onReady, onExit)
 }
@@ -90,16 +165,40 @@ func onReady() {
 	gui.init()
 
 	go func() {
-		ctxD = context.Background()
 		go gui.logoSpin(300)
-		go StartDaemon(ctxD, false, LBChn)
+
+		// 开启通讯员
+		go watcher.Start()
 
 		getST()
 		go gui.setNotLogin(backVersion)
 
-		LB := <-LBChn
 		for {
 			select {
+			case newMsg := <-watcher.Tx:
+				// 开启通讯员
+				switch newMsg.Type {
+				case Fatal: // 遇到通讯员无法恢复严重错误崩溃，导致程序只能由用户选择重启动通讯员或者退出程序
+					go gui.setErr()
+					go func(msg string) {
+						feedback := zenity.Question("程序通讯员报错"+msg+"无法执行，重试还是退出？",
+							zenity.WindowIcon(logo_png),
+							zenity.Title("严重错误"),
+							zenity.OKLabel("重试"),
+							zenity.CancelLabel("退出"))
+						if feedback == nil {
+							go watcher.Start()
+							return
+						} else {
+							systray.Quit()
+							return
+						}
+					}(newMsg.data.(error).Error())
+				case Error:
+					logNotify(newMsg.data.(error).Error(), errors.New("收到通讯员错误："+newMsg.data.(error).Error()))
+					go gui.setErr()
+				}
+				go watcher.Start()
 			case <-stNeedLoginCh:
 				getST()
 				go gui.setNotLogin(backVersion)
@@ -115,10 +214,9 @@ func onReady() {
 				systray.SetIcon(resource.Mlogo)
 				logNotify("已连接", errors.New(""))
 				lastDays := ""
-				if !st.Self.KeyExpiry.After(time.Now().AddDate(0, 0, 7)) {
+				if st.Self.KeyExpiry != nil && !st.Self.KeyExpiry.After(time.Now().AddDate(0, 0, 7)) {
 					lastDays = strings.TrimSuffix((st.Self.KeyExpiry.Sub(time.Now()) / time.Duration(time.Hour*24)).String(), "ns")
 					go func(lastDays string) {
-
 						feedback := zenity.Question("该设备还有"+lastDays+"天过期",
 							zenity.WindowIcon(logo_png),
 							zenity.Title("临期设备提醒"),
@@ -163,7 +261,7 @@ func onReady() {
 						if newServerCode == "" {
 							newServerCode = "ipv4.uk"
 						}
-						LB.SetServerCode(newServerCode)
+						LC.SetStore(ctx, string(ipn.CurrentServerCodeKey), newServerCode)
 					}
 				}
 			case <-gui.optDNSMenu.ClickedCh:
@@ -193,9 +291,12 @@ func onReady() {
 					turnoffExitNode()
 				}
 			case <-gui.userConsoleMenu.ClickedCh:
-				open.Run(console_url)
+				open.Run(control_url + "/admin")
 			case <-gui.loginMenu.ClickedCh:
-				if LB.GetServerCode() == "" {
+				serverCodeData, err := LC.GetStore(ctx, string(ipn.CurrentServerCodeKey))
+				if err != nil && err != ipn.ErrStateNotExist {
+					logNotify("读取服务器代码出错", err)
+				} else if err == ipn.ErrStateNotExist || serverCodeData == nil || string(serverCodeData) == "" {
 					newServerCode, err := zenity.Entry("请输入您接入的控制器代码（留空默认）:",
 						zenity.WindowIcon(logo_png),
 						zenity.Title("初始化"),
@@ -205,7 +306,11 @@ func onReady() {
 						if newServerCode == "" {
 							newServerCode = "ipv4.uk"
 						}
-						LB.SetServerCode(newServerCode)
+						err := LC.SetStore(ctx, string(ipn.CurrentServerCodeKey), newServerCode)
+						if err != nil {
+							logNotify("设置服务器代码出错", err)
+							break
+						}
 						control_url = "https://sdp." + newServerCode
 						if !strings.Contains(newServerCode, ".") {
 							control_url = control_url + ".com"
@@ -217,7 +322,7 @@ func onReady() {
 						LC.StartLoginInteractive(ctx)
 					}
 				} else {
-					serverCode := LB.GetServerCode()
+					serverCode := string(serverCodeData)
 					control_url = "https://sdp." + serverCode
 					if !strings.Contains(serverCode, ".") {
 						control_url = control_url + ".com"

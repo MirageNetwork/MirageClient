@@ -10,21 +10,21 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/cmd/tailscaled",
+            "program": "${workspaceFolder}/mirageclient-win",
             "args": [
-                "--socket",
-                 "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged"
+                "-debugD",
+//                 "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged"
             ]
         },{
             "name": "client-GUI",
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/mirageclient-win",
+            "program": "${workspaceFolder}/mirageclient-win",/*
             "args":[
                 "-tags walk_use_cgo",
                 "-ldflags=-H windowsgui"
-            ]
+            ]*/
         },{
             "name": "StartUp",
             "type": "go",

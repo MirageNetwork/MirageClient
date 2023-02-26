@@ -380,6 +380,27 @@ func (lc *LocalClient) SetDevStoreKeyValue(ctx context.Context, key, value strin
 	return nil
 }
 
+// cgao6: 增加正式的后端接收前端设置store的接口
+func (lc *LocalClient) SetStore(ctx context.Context, key, value string) error {
+	body, err := lc.send(ctx, "POST", "/localapi/v0/set-state-store?"+(url.Values{
+		"key":   {key},
+		"value": {value},
+	}).Encode(), 200, nil)
+	if err != nil {
+		return fmt.Errorf("error %w: %s", err, body)
+	}
+	return nil
+}
+
+// cgao6: 此外尝试增加对应的从后端读取store的接口
+func (lc *LocalClient) GetStore(ctx context.Context, key string) ([]byte, error) {
+	value, err := lc.get200(ctx, "/localapi/v0/get-state-store?key="+url.QueryEscape(key))
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
 // SetComponentDebugLogging sets component's debug logging enabled for
 // the provided duration. If the duration is in the past, the debug logging
 // is disabled.
@@ -928,7 +949,7 @@ func tailscaledConnectHint() string {
 		// TODO(bradfitz): flesh this out
 		return "not running?"
 	}
-	out, err := exec.Command("systemctl", "show", "tailscaled.service", "--no-page", "--property", "LoadState,ActiveState,SubState").Output()
+	out, err := exec.Command("systemctl", "show", "miraged.service", "--no-page", "--property", "LoadState,ActiveState,SubState").Output()
 	if err != nil {
 		return "not running?"
 	}
@@ -944,7 +965,7 @@ func tailscaledConnectHint() string {
 	}
 	if st["LoadState"] == "loaded" &&
 		(st["SubState"] != "running" || st["ActiveState"] != "active") {
-		return "systemd tailscaled.service not running."
+		return "systemd miraged.service not running."
 	}
 	return "not running?"
 }

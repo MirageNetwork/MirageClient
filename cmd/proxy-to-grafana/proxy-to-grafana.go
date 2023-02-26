@@ -42,9 +42,9 @@ import (
 )
 
 var (
-	hostname     = flag.String("hostname", "", "Tailscale hostname to serve on, used as the base name for MagicDNS or subdomain in your domain alias for HTTPS.")
+	hostname     = flag.String("hostname", "", "Mirage hostname to serve on, used as the base name for MagicDNS or subdomain in your domain alias for HTTPS.")
 	backendAddr  = flag.String("backend-addr", "", "Address of the Grafana server served over HTTP, in host:port format. Typically localhost:nnnn.")
-	tailscaleDir = flag.String("state-dir", "./", "Alternate directory to use for Tailscale state storage. If empty, a default is used.")
+	tailscaleDir = flag.String("state-dir", "./", "Alternate directory to use for Mirage state storage. If empty, a default is used.")
 	useHTTPS     = flag.Bool("use-https", false, "Serve over HTTPS via your *.ts.net subdomain if enabled in Tailscale admin.")
 )
 
