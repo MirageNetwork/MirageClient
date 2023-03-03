@@ -17,7 +17,7 @@
           "version": "1.37.0227"
         },
         "description": "蜃境-简单安全的组网工具",
-        "minimum-os": "win10",
+        "minimum-os": "win7",
         "execution-level": "",
         "ui-access": false,
         "auto-elevate": false,

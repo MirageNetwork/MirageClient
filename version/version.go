@@ -77,7 +77,8 @@ func Long() string {
 		if !bi.valid {
 			return strings.TrimSpace(tailscaleroot.VersionDotTxt) + "-ERR-BuildInfo"
 		}
-		return fmt.Sprintf("%s-dev%s-t%s%s", strings.TrimSpace(tailscaleroot.VersionDotTxt), bi.commitDate, bi.commitAbbrev(), dirtyString())
+		//return fmt.Sprintf("%s-dev%s-t%s%s", strings.TrimSpace(tailscaleroot.VersionDotTxt), bi.commitDate, bi.commitAbbrev(), dirtyString())
+		return fmt.Sprintf("%s-%s-%s", strings.TrimSpace(tailscaleroot.VersionDotTxt), bi.commitDate, bi.commitAbbrev())
 	})
 }
 
@@ -97,7 +98,7 @@ func Short() string {
 		if !bi.valid {
 			return strings.TrimSpace(tailscaleroot.VersionDotTxt) + "-ERR-BuildInfo"
 		}
-		return strings.TrimSpace(tailscaleroot.VersionDotTxt) + "-dev" + bi.commitDate
+		return strings.TrimSpace(tailscaleroot.VersionDotTxt) // + "-dev" + bi.commitDate
 	})
 }
 

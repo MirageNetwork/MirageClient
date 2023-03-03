@@ -1,4 +1,4 @@
-package miramenu
+package main
 
 import (
 	"github.com/tailscale/walk"

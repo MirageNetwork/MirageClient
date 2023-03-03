@@ -1,4 +1,4 @@
-package miramenu
+package main
 
 import (
 	"log"
@@ -266,7 +266,6 @@ func popTextInputDlg(title, inputtip string) (confirm bool, value string) {
 	if dlgrt == walk.DlgCmdOK {
 		confirm = true
 	}
-	log.Printf("[工具人] 对话框返回值: %v", dlgrt)
 	return
 }
 func (m *MiraMenu) showAbout() {

@@ -1,4 +1,4 @@
-package miramenu
+package main
 
 import (
 	"embed"

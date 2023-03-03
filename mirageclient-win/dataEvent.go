@@ -1,4 +1,4 @@
-package miramenu
+package main
 
 type dataEventHandlerInfo struct {
 	handler DataEventHandle

@@ -6,33 +6,25 @@ import (
 	"context"
 	"flag"
 	"log"
-	"os"
-	"path/filepath"
 	"time"
 
 	"golang.org/x/sys/windows/svc"
 	"tailscale.com/envknob"
 	"tailscale.com/logpolicy"
 	"tailscale.com/logtail"
-	"tailscale.com/mirageclient-win/miramenu"
 	"tailscale.com/types/logger"
 	"tailscale.com/util/osshare"
 	"tailscale.com/util/winutil"
 )
 
-const socket_path string = `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
-const engine_port uint16 = 0 //动态端口机制
-const serviceName string = "Mirage"
-
-var program_path string = filepath.Join(os.Getenv("ProgramData"), serviceName)
-
-var MM *miramenu.MiraMenu
+var MM *MiraMenu
 
 // TODO： 以下新版本模式全局变量
 var logPol *logpolicy.Policy // 日志策略（后台服务logtail使用）
 
 var args struct { // 命令行参数部分
 	asServiceInstaller   bool   // 执行服务安装
+	asServiceUninstaller bool   // 执行服务卸载
 	asFirewallKillswitch bool   // 执行防火墙调整（被wgengine调用）
 	tunGUID              string // 执行防火墙调整参数
 	asServiceSubProc     bool   // 作为后台服务子进程被调用
@@ -41,14 +33,9 @@ var args struct { // 命令行参数部分
 
 var watcher *MiraWatcher // 通讯协程实体
 
-var cancel context.CancelFunc
-
 func main() {
-	//err1 := uninstallSystemDaemonWindows()
-	//uninstallWinTun()
-	//log.Println(err1)
-	// cgao6: 以上仅调试时使用，发布时切勿开启
 
+	flag.BoolVar(&args.asServiceUninstaller, "uninstall", false, "卸载后台服务")
 	flag.BoolVar(&args.asServiceInstaller, "install", false, "安装后台服务")
 	flag.BoolVar(&args.asFirewallKillswitch, "firewall", false, "管理防火墙")
 	flag.StringVar(&args.tunGUID, "tunGUID", "", "管理防火墙使用tun的GUID值")
@@ -57,7 +44,7 @@ func main() {
 	flag.Parse()
 
 	isService, err := svc.IsWindowsService()
-	if args.asServiceInstaller || args.asFirewallKillswitch || args.asServiceSubProc || isService {
+	if args.asServiceInstaller || args.asServiceUninstaller || args.asFirewallKillswitch || args.asServiceSubProc || isService {
 		envknob.PanicIfAnyEnvCheckedInInit()
 		envknob.ApplyDiskConfig()
 		// 开局先屏蔽TS的日志 （但后续保留日志设置，以防后续我们希望使用logtail）
@@ -74,7 +61,11 @@ func main() {
 		}()
 
 		// 判断是否是服务安装
-		if beServiceInstaller() {
+		if isServiceInstaller() {
+			return //结束安装
+		}
+		// 判断是否是服务卸载
+		if isServiceUninstaller() {
 			return //结束安装
 		}
 
@@ -105,7 +96,7 @@ func main() {
 	// 创建与后台服务的通讯员
 	watcher = NewWatcher()
 
-	MM = &miramenu.MiraMenu{}
+	MM = &MiraMenu{}
 	MM.Init()
 
 	MM.SetRx(watcher.Tx)

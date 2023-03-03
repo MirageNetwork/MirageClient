@@ -1,7 +1,4 @@
-// Copyright (c) Tailscale Inc & AUTHORS
-// SPDX-License-Identifier: BSD-3-Clause
-
-//go:build go1.19
+//go:build windows && go1.20
 
 package main
 
@@ -23,7 +20,7 @@ import (
 	"tailscale.com/util/winutil"
 )
 
-func installSystemDaemonWindows() (err error) {
+func InstallSystemDaemonWindows() (err error) {
 	m, err := mgr.Connect()
 	if err != nil {
 		return fmt.Errorf("failed to connect to Windows service manager: %v", err)
@@ -78,7 +75,7 @@ func installSystemDaemonWindows() (err error) {
 	return nil
 }
 
-func uninstallSystemDaemonWindows() (ret error) {
+func UninstallSystemDaemonWindows() (ret error) {
 	// Remove file sharing from Windows shell (noop in non-windows)
 	osshare.SetFileSharingEnabled(false, logger.Discard)
 
@@ -121,36 +118,7 @@ func uninstallSystemDaemonWindows() (ret error) {
 	return nil
 }
 
-/*
-	func getAdminToken() windows.Token {
-		// 获取管理员权限的 Token
-		var hToken windows.Token
-		err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY|windows.TOKEN_ADJUST_PRIVILEGES, &hToken)
-		if err != nil {
-			panic(err)
-		}
-		defer hToken.Close()
-
-		var tp windows.Tokenprivileges
-		privStr, err := syscall.UTF16PtrFromString("SeDebugPrivilege")
-		if err != nil {
-			panic(err)
-		}
-		err = windows.LookupPrivilegeValue(nil, privStr, &tp.Privileges[0].Luid)
-		if err != nil {
-			panic(err)
-		}
-		tp.PrivilegeCount = 1
-		tp.Privileges[0].Attributes = windows.SE_PRIVILEGE_ENABLED
-
-		err = windows.AdjustTokenPrivileges(hToken, false, &tp, 0, nil, nil)
-		if err != nil {
-			panic(err)
-		}
-		return hToken
-	}
-*/
-func elevateToStartService() error {
+func ElevateToInstallService() error {
 
 	exePath, err := os.Executable()
 	if err != nil {
@@ -178,20 +146,36 @@ func elevateToStartService() error {
 		log.Fatalf("执行服务安装进程失败：%s", err)
 		return err
 	}
-	/*
-		cmd := exec.Command(exePath, "-install")
+	return nil
+}
 
-		token := getAdminToken()
-		cmd.SysProcAttr = &syscall.SysProcAttr{Token: syscall.Token(token)}
-		err = cmd.Start()
-		if err != nil {
-			return err
-		}
-		err = cmd.Wait()
-		if err != nil {
-			return err
-		}
-	*/
+func ElevateToUinstallService() error {
+	exePath, err := os.Executable()
+	if err != nil {
+		log.Fatalf("获取当前程序路径出错%s", err)
+		return err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("获取当前程序工作目录出错%s", err)
+		return err
+	}
+
+	verb := "runas"
+	args := "-uninstall"
+
+	verbPtr, _ := syscall.UTF16PtrFromString(verb)
+	exePtr, _ := syscall.UTF16PtrFromString(exePath)
+	cwdPtr, _ := syscall.UTF16PtrFromString(cwd)
+	argPtr, _ := syscall.UTF16PtrFromString(args)
+
+	var showCmd int32 = 0 //1-SW_NORMAL 0-SW_HIDE
+
+	err = windows.ShellExecute(0, verbPtr, exePtr, argPtr, cwdPtr, showCmd)
+	if err != nil {
+		log.Fatalf("执行服务卸载进程失败：%s", err)
+		return err
+	}
 	return nil
 }
 
@@ -267,13 +251,13 @@ func startService() error {
 	return err
 }
 
-func beServiceInstaller() bool {
+func isServiceInstaller() bool {
 	if !args.asServiceInstaller {
 		return false
 	}
 	// 以下进行服务安装
 	if !isServiceInstalled() {
-		err := installSystemDaemonWindows()
+		err := InstallSystemDaemonWindows()
 		if err != nil {
 			log.Fatalf("服务安装执行失败")
 			return true
@@ -310,5 +294,29 @@ func beServiceInstaller() bool {
 			return true
 		}
 	}
+	return true
+}
+
+func isServiceUninstaller() bool {
+	if !args.asServiceUninstaller {
+		return false
+	}
+	// 以下进行服务卸载
+	if !isServiceInstalled() {
+		log.Fatalf("服务尚未安装")
+		return true
+	}
+	UninstallSystemDaemonWindows()
+
+	// 试探状态
+	for isServiceInstalled() {
+		select {
+		case <-time.Tick(time.Second):
+		case <-time.After(time.Second * 20):
+			log.Fatalf("服务未能卸载")
+			return true
+		}
+	}
+	uninstallWinTun()
 	return true
 }

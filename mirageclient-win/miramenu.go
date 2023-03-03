@@ -1,4 +1,4 @@
-package miramenu
+package main
 
 import (
 	"context"
@@ -40,7 +40,8 @@ type MiraMenu struct {
 	exitField    *exitField
 	prefField    *prefField
 
-	exitAction *walk.Action
+	debugAction *walk.Action
+	exitAction  *walk.Action
 }
 
 func (s *MiraMenu) Init() {
@@ -66,27 +67,30 @@ func (s *MiraMenu) Init() {
 		if button == walk.LeftButton {
 			if s.backendData.magicCounter == 0 {
 				go func() {
-					<-time.After(5 * time.Second)
+					<-time.After(2 * time.Second)
 					s.backendData.magicCounter = 0
 				}()
 			}
 			s.backendData.magicCounter++
-			if s.backendData.magicCounter == 3 {
+			if s.backendData.magicCounter == 5 {
 				s.backendData.magicCounter = 0
-				s.tray.SetVisible(false)
-				confirm, newServerCode := popTextInputDlg("重设定", "新控制器代码（留空默认，下次登录生效）:")
-				s.tray.SetVisible(true)
-				log.Printf("doLogin: %v, %v", confirm, newServerCode)
-				if confirm {
-					if newServerCode == "" {
-						newServerCode = "ipv4.uk"
+				s.debugAction.SetVisible(true)
+				/*
+					s.tray.SetVisible(false)
+					confirm, newServerCode := popTextInputDlg("重设定", "新控制器代码（留空默认，下次登录生效）:")
+					s.tray.SetVisible(true)
+					log.Printf("doLogin: %v, %v", confirm, newServerCode)
+					if confirm {
+						if newServerCode == "" {
+							newServerCode = "ipv4.uk"
+						}
+						err := s.lc.SetStore(s.ctx, string(ipn.CurrentServerCodeKey), newServerCode)
+						if err != nil {
+							go s.SendNotify("重设置服务器代码出错", err.Error(), NL_Error)
+							return
+						}
 					}
-					err := s.lc.SetStore(s.ctx, string(ipn.CurrentServerCodeKey), newServerCode)
-					if err != nil {
-						go s.SendNotify("重设置服务器代码出错", err.Error(), NL_Error)
-						return
-					}
-				}
+				*/
 			}
 		}
 	})
@@ -128,12 +132,60 @@ func (s *MiraMenu) Init() {
 	if err != nil {
 		log.Printf("初始化配置项菜单区错误：%s", err)
 	}
+
 	s.prefField.bindBackendDataChange(s.backendData)
+
+	resetAction := walk.NewAction()
+	resetAction.SetText("#重置服务器并登出")
+	resetAction.Triggered().Attach(func() {
+		s.tray.SetVisible(false)
+		confirm := PopConfirmDlg("重置服务器并登出", "重置服务器并登出后，下次登录时需重设服务器代码，是否继续？", 300, 150)
+		s.tray.SetVisible(true)
+		if confirm {
+			err := s.lc.SetStore(s.ctx, string(ipn.CurrentServerCodeKey), "")
+			if err != nil {
+				go s.SendNotify("重设置服务器代码出错", err.Error(), NL_Error)
+				return
+			}
+			err = s.lc.Logout(s.ctx)
+			if err != nil {
+				go s.SendNotify("登出出错", err.Error(), NL_Error)
+				return
+			}
+		}
+	})
+	uninstallServiceAction := walk.NewAction()
+	uninstallServiceAction.SetText("#卸载后台服务并退出")
+	uninstallServiceAction.Triggered().Attach(func() {
+		s.tray.SetVisible(false)
+		confirm := PopConfirmDlg("卸载后台服务", "将要卸载后台服务并关闭应用，是否继续？", 200, 100)
+		s.tray.SetVisible(true)
+		if confirm {
+			err := ElevateToUinstallService()
+			if err != nil {
+				go s.SendNotify("卸载后台服务出错", err.Error(), NL_Error)
+				return
+			}
+			walk.App().Exit(0)
+		}
+	})
+	debugContain, err := walk.NewMenu()
+	if err != nil {
+		log.Printf("初始化调试菜单区错误：%s", err)
+	}
+	debugContain.Actions().Add(resetAction)
+	debugContain.Actions().Add(uninstallServiceAction)
+	s.debugAction = walk.NewMenuAction(debugContain)
+	s.debugAction.SetText("调试项")
+	s.debugAction.SetVisible(false)
+	s.tray.ContextMenu().Actions().Add(s.debugAction)
+
 	s.exitAction = walk.NewAction()
 	s.exitAction.SetText("退出")
 	s.exitAction.Triggered().Attach(func() {
 		walk.App().Exit(0)
 	})
+
 	s.tray.ContextMenu().Actions().Add(s.exitAction)
 
 	s.connectField.loginAction.Triggered().Attach(s.doLogin)

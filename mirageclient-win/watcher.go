@@ -17,15 +17,6 @@ import (
 	"tailscale.com/mirageclient-win/utils"
 )
 
-type backendVersion string
-
-type watcherMsgType int
-
-const (
-	FatalMsg watcherMsgType = iota
-	ErrorMsg
-)
-
 type MiraWatcher struct { // 通讯协程实体
 	mu        sync.Mutex         // 状态锁
 	ctx       context.Context    // 通讯协程上下文
@@ -62,7 +53,7 @@ func (w *MiraWatcher) Start(ctx context.Context, LC tailscale.LocalClient) error
 
 	// 检查服务是否在正常运行
 	if !isServiceRunning() { // 未在正常运行以管理员权限调用尝试使其正常运行
-		err := elevateToStartService()
+		err := ElevateToInstallService()
 		if err != nil {
 			w.Tx <- err
 			return err

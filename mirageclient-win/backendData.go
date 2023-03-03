@@ -1,4 +1,4 @@
-package miramenu
+package main
 
 import (
 	"log"
@@ -10,7 +10,7 @@ import (
 )
 
 type backendData struct {
-	magicCounter  int                    // 用于5秒内点击图标三次重设Server Code
+	magicCounter  int                    // 用于2秒内左键点击图标五次开启debug菜单项
 	Version       string                 // 后端版本
 	ErrMessage    *string                // 错误消息
 	Prefs         *ipn.Prefs             // 本地配置
