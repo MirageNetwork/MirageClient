@@ -93,17 +93,6 @@ func beWindowsSubprocess() bool {
 
 	logid := args.logid // 传入的logtail ID
 
-	/*
-		file, err := os.OpenFile(filepath.Join(program_path, serviceName+".log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		defer file.Close()
-		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to open log file")
-		}
-		// 创建新的日志记录器
-		logger := zerolog.New(file).With().Timestamp().Logger()
-		log.Logger = logger
-	*/
-
 	log.Printf("Program starting: v%v: %#v", version.Long(), os.Args)
 	log.Printf("subproc mode: logid=%v", logid)
 	if err := envknob.ApplyDiskConfigError(); err != nil {

@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -14,28 +13,26 @@ import (
 	"time"
 
 	"github.com/skratchdot/open-golang/open"
-	"tailscale.com/ipn"
+	"tailscale.com/client/tailscale"
+	"tailscale.com/mirageclient-win/utils"
 )
+
+type backendVersion string
 
 type watcherMsgType int
 
 const (
-	Fatal watcherMsgType = iota
-	Error
+	FatalMsg watcherMsgType = iota
+	ErrorMsg
 )
-
-type watcherMsg struct {
-	Type watcherMsgType
-	data interface{}
-}
 
 type MiraWatcher struct { // 通讯协程实体
 	mu        sync.Mutex         // 状态锁
 	ctx       context.Context    // 通讯协程上下文
 	Stop      context.CancelFunc // 通讯协程退出函数
 	isRunning bool               // 通信协程运行状态
-	Rx        chan watcherMsg    // 通信携程接收管道
-	Tx        chan watcherMsg    // 通信协程发送管道
+	Rx        chan interface{}   // 通信携程接收管道
+	Tx        chan interface{}   // 通信协程发送管道
 }
 
 // 创建通讯协程函数
@@ -45,8 +42,8 @@ func NewWatcher() *MiraWatcher {
 		ctx:       ctx,
 		Stop:      cancel,
 		isRunning: false,
-		Rx:        make(chan watcherMsg, 3), // TODO:暂时设置缓存3条
-		Tx:        make(chan watcherMsg, 3), // TODO:暂时设置缓存3条
+		Rx:        make(chan interface{}, 5), // TODO:暂时设置缓存5条
+		Tx:        make(chan interface{}, 5), // TODO:暂时设置缓存5条
 	}
 }
 
@@ -61,16 +58,13 @@ func (w *MiraWatcher) SetStatus(v bool) {
 	w.isRunning = v
 }
 
-func (w *MiraWatcher) Start() error {
+func (w *MiraWatcher) Start(ctx context.Context, LC tailscale.LocalClient) error {
 
 	// 检查服务是否在正常运行
 	if !isServiceRunning() { // 未在正常运行以管理员权限调用尝试使其正常运行
 		err := elevateToStartService()
 		if err != nil {
-			w.Tx <- watcherMsg{
-				Type: Fatal,
-				data: err,
-			}
+			w.Tx <- err
 			return err
 		}
 	}
@@ -84,19 +78,16 @@ func (w *MiraWatcher) Start() error {
 	}
 	if !isServiceRunning() {
 		err := errors.New("后台服务未正常运行")
-		w.Tx <- watcherMsg{
-			Type: Fatal,
-			data: err,
-		}
+		w.Tx <- err
 		return err
 	}
 
-	WatchDaemon(ctx)
+	w.WatchDaemon(ctx, LC)
 
 	return nil
 }
 
-func WatchDaemon(ctx context.Context) {
+func (w *MiraWatcher) WatchDaemon(ctx context.Context, LC tailscale.LocalClient) {
 	watchCtx, cancelWatch := context.WithCancel(ctx)
 	defer cancelWatch()
 
@@ -107,7 +98,8 @@ func WatchDaemon(ctx context.Context) {
 			log.Printf("守护进程监听管道建立完成")
 			break
 		} else if retryCounter < 0 {
-			logNotify("无法建立守护进程监听管道", err)
+			err = errors.New("无法建立守护进程监听管道:" + err.Error())
+			w.Tx <- err
 			return // Todo
 		}
 		log.Printf("守护进程监听管道建立失败,等待1秒重试:" + err.Error())
@@ -130,37 +122,37 @@ func WatchDaemon(ctx context.Context) {
 	for {
 		n, err := watcher.Next()
 		if err != nil {
-			fmt.Println("[ERROR] " + err.Error())
+			log.Printf("[通讯兵] 收到错误消息: %s", err)
+			w.Tx <- err
 			continue
+		}
+		if v := n.Version; v != "" {
+			log.Printf("[通讯兵] 收到版本号: %s", v)
+			w.Tx <- utils.BackendVersion(v)
 		}
 
 		if nm := n.NetMap; nm != nil {
-			netMapChn <- true
+			log.Printf("[通讯兵] 收到网络图: %s", nm)
+			w.Tx <- nm
 		}
 
 		if pref := n.Prefs; pref != nil {
-			prefChn <- true
+			log.Printf("[通讯兵] 收到首选项: %s", pref.Pretty())
+			w.Tx <- pref.AsStruct().Clone()
 		}
 		if st := n.State; st != nil {
-			switch *st {
-			case ipn.NeedsLogin:
-				stNeedLoginCh <- true
-			case ipn.Stopped:
-				stStopCh <- true
-			case ipn.Starting:
-				stStartingCh <- true
-			case ipn.Running:
-				stRunCh <- true
-			}
+			log.Printf("[通讯兵] 收到状态变化: %s", *st)
+			w.Tx <- *st
 		}
 		if url := n.BrowseToURL; url != nil {
+			log.Printf("[通讯兵] 收到登录URL: %s", *url)
 			prefs, err := LC.GetPrefs(ctx)
 			if err != nil {
 				break
 			}
 			if prefs.WantRunning {
 				open.Run(*url)
-				fmt.Println("I opened this url: " + *url)
+				log.Printf("I opened this url: %s", *url)
 			}
 		}
 	}

@@ -18,7 +18,7 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 	github.com/creack/pty v1.1.17
 	github.com/dave/jennifer v1.6.0
-	github.com/dblohm7/wingoes v0.0.0-20221124203957-6ac47ab19aa5
+	github.com/dblohm7/wingoes v0.0.0-20230131214643-2b26ab7fb5f9
 	github.com/dsnet/try v0.0.3
 	github.com/evanw/esbuild v0.14.53
 	github.com/frankban/quicktest v1.14.0
@@ -72,7 +72,7 @@ require (
 	go4.org/mem v0.0.0-20210711025021-927187094b94
 	go4.org/netipx v0.0.0-20220725152314-7e7bdc8411bf
 	golang.org/x/crypto v0.6.0
-	golang.org/x/exp v0.0.0-20221205204356-47842c84f3db
+	golang.org/x/exp v0.0.0-20230127140709-cafedaf64729
 	golang.org/x/mod v0.7.0
 	golang.org/x/net v0.7.0
 	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5
@@ -105,12 +105,11 @@ require (
 	github.com/getlantern/hidden v0.0.0-20190325191715-f02dbb02be55 // indirect
 	github.com/getlantern/ops v0.0.0-20190325191751-d70cb0d6f85f // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
-	github.com/go-toast/toast v0.0.0-20190211030409-01e6764cf0a4 // indirect
 	github.com/josephspurrier/goversioninfo v1.4.0 // indirect
-	github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d // indirect
 	github.com/oxtoacart/bpool v0.0.0-20190530202638-03653db5a59c // indirect
 	github.com/randall77/makefat v0.0.0-20210315173500-7ddd0e42c844 // indirect
-	github.com/tadvi/systray v0.0.0-20190226123456-11a2b8fa57af // indirect
+	github.com/tailscale/win v0.0.0-20230202211146-fd21cc0d8ef1 // indirect
+	gopkg.in/Knetic/govaluate.v3 v3.0.0 // indirect
 )
 
 require (
@@ -175,7 +174,6 @@ require (
 	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
 	github.com/fzipp/gocyclo v0.3.1 // indirect
-	github.com/gen2brain/beeep v0.0.0-20220909211152-5a9ec94374f6
 	github.com/gliderlabs/ssh v0.3.3 // indirect
 	github.com/go-critic/go-critic v0.6.1 // indirect
 	github.com/go-git/gcfg v1.5.0 // indirect
@@ -308,6 +306,7 @@ require (
 	github.com/stretchr/testify v1.8.0 // indirect
 	github.com/subosito/gotenv v1.2.0 // indirect
 	github.com/sylvia7788/contextcheck v1.0.4 // indirect
+	github.com/tailscale/walk v0.0.0-20230210175544-f4cdc7d889ba
 	github.com/tdakkota/asciicheck v0.1.1 // indirect
 	github.com/tetafro/godot v1.4.11 // indirect
 	github.com/timakin/bodyclose v0.0.0-20210704033933-f49887972144 // indirect

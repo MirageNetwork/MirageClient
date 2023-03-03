@@ -4,47 +4,29 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
-	"fmt"
 	"log"
-	"strings"
+	"os"
+	"path/filepath"
 	"time"
 
-	"github.com/ncruces/zenity"
 	"golang.org/x/sys/windows/svc"
 	"tailscale.com/envknob"
-	"tailscale.com/ipn"
-	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/logpolicy"
 	"tailscale.com/logtail"
-	"tailscale.com/mirageclient-win/resource"
-	"tailscale.com/mirageclient-win/systray"
+	"tailscale.com/mirageclient-win/miramenu"
 	"tailscale.com/types/logger"
 	"tailscale.com/util/osshare"
 	"tailscale.com/util/winutil"
-
-	"github.com/skratchdot/open-golang/open"
-
-	"tailscale.com/client/tailscale"
-
-	"github.com/atotto/clipboard"
 )
 
-var backVersion string
+const socket_path string = `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
+const engine_port uint16 = 0 //动态端口机制
+const serviceName string = "Mirage"
 
-var LC tailscale.LocalClient
+var program_path string = filepath.Join(os.Getenv("ProgramData"), serviceName)
 
-var magicVersionCounter int
-
-var netMapChn chan bool
-var prefChn chan bool
-
-// some state channel
-var stNeedLoginCh chan bool
-var stStopCh chan bool
-var stStartingCh chan bool
-var stRunCh chan bool
+var MM *miramenu.MiraMenu
 
 // TODO： 以下新版本模式全局变量
 var logPol *logpolicy.Policy // 日志策略（后台服务logtail使用）
@@ -58,15 +40,13 @@ var args struct { // 命令行参数部分
 } // 启动参数
 
 var watcher *MiraWatcher // 通讯协程实体
-var gui MiraMenu         // gui界面实体
 
-var ctx context.Context
 var cancel context.CancelFunc
 
 func main() {
 	//err1 := uninstallSystemDaemonWindows()
 	//uninstallWinTun()
-	//fmt.Println(err1)
+	//log.Println(err1)
 	// cgao6: 以上仅调试时使用，发布时切勿开启
 
 	flag.BoolVar(&args.asServiceInstaller, "install", false, "安装后台服务")
@@ -115,9 +95,9 @@ func main() {
 			return //结束服务
 		}
 	}
+
 	// 客户端要保证单一进程
 	_, err = winutil.CreateAppMutex("MirageWin")
-	//_, err := CreateMutex("MirageWin")
 	if err != nil {
 		return
 	}
@@ -125,282 +105,12 @@ func main() {
 	// 创建与后台服务的通讯员
 	watcher = NewWatcher()
 
-	// 非Win服务则执行后序GUI部分
-	LC = tailscale.LocalClient{
-		Socket:        socket_path,
-		UseSocketOnly: false}
-	ctx, cancel = context.WithCancel(context.Background())
+	MM = &miramenu.MiraMenu{}
+	MM.Init()
 
-	stNeedLoginCh = make(chan bool)
-	stStopCh = make(chan bool)
-	stStartingCh = make(chan bool)
-	stRunCh = make(chan bool)
+	MM.SetRx(watcher.Tx)
+	MM.SetTx(watcher.Rx)
+	MM.SetWatchStart(watcher.Start)
 
-	netMapChn = make(chan bool)
-	prefChn = make(chan bool)
-
-	magicVersionCounter = 0
-
-	onExit := func() {
-	}
-
-	defer onExit()
-
-	systray.Run(onReady, onExit)
-}
-
-func onReady() {
-	gui.init()
-
-	go func() {
-		go gui.logoSpin(300)
-
-		// 开启通讯员
-		go watcher.Start()
-
-		getST()
-		go gui.setNotLogin(backVersion)
-
-		for {
-			select {
-			case newMsg := <-watcher.Tx:
-				// 开启通讯员
-				switch newMsg.Type {
-				case Fatal: // 遇到通讯员无法恢复严重错误崩溃，导致程序只能由用户选择重启动通讯员或者退出程序
-					go gui.setErr()
-					go func(msg string) {
-						feedback := zenity.Question("程序通讯员报错"+msg+"无法执行，重试还是退出？",
-							zenity.WindowIcon(logo_png),
-							zenity.Title("严重错误"),
-							zenity.OKLabel("重试"),
-							zenity.CancelLabel("退出"))
-						if feedback == nil {
-							go watcher.Start()
-							return
-						} else {
-							systray.Quit()
-							return
-						}
-					}(newMsg.data.(error).Error())
-				case Error:
-					logNotify(newMsg.data.(error).Error(), errors.New("收到通讯员错误："+newMsg.data.(error).Error()))
-					go gui.setErr()
-				}
-				go watcher.Start()
-			case <-stNeedLoginCh:
-				getST()
-				go gui.setNotLogin(backVersion)
-			case <-stStopCh:
-				refreshPrefs()
-				st := getST()
-				go gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
-			case <-stStartingCh:
-				st := getST()
-				go gui.setStarting(st.User[st.Self.UserID].DisplayName, backVersion)
-			case <-stRunCh:
-				st := getST()
-				systray.SetIcon(resource.Mlogo)
-				logNotify("已连接", errors.New(""))
-				lastDays := ""
-				if st.Self.KeyExpiry != nil && !st.Self.KeyExpiry.After(time.Now().AddDate(0, 0, 7)) {
-					lastDays = strings.TrimSuffix((st.Self.KeyExpiry.Sub(time.Now()) / time.Duration(time.Hour*24)).String(), "ns")
-					go func(lastDays string) {
-						feedback := zenity.Question("该设备还有"+lastDays+"天过期",
-							zenity.WindowIcon(logo_png),
-							zenity.Title("临期设备提醒"),
-							zenity.OKLabel("登录延期"),
-							zenity.CancelLabel("暂时不"))
-						if feedback == nil {
-							LC.StartLoginInteractive(ctx)
-							return
-						} else {
-							return
-						}
-					}(lastDays)
-				}
-
-				if st.TailscaleIPs[0].Is4() {
-					go gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion, lastDays)
-				} else {
-					go gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[1].String(), backVersion, lastDays)
-				}
-				refreshPrefs()
-				gui.nodeListMenu.update(st)
-				gui.exitNodeMenu.update(st)
-			case <-gui.quitMenu.ClickedCh:
-				systray.Quit()
-				fmt.Println("退出...")
-			case <-gui.versionMenu.ClickedCh:
-				if magicVersionCounter == 0 {
-					go func() {
-						<-time.After(10 * time.Second)
-						magicVersionCounter = 0
-					}()
-				}
-				magicVersionCounter++
-				if magicVersionCounter == 3 {
-					magicVersionCounter = 0
-					newServerCode, err := zenity.Entry("新控制器代码（留空默认，下次登录生效）:",
-						zenity.WindowIcon(logo_png),
-						zenity.Title("重设定"),
-						zenity.OKLabel("确定"),
-						zenity.CancelLabel("取消"))
-					if err == nil {
-						if newServerCode == "" {
-							newServerCode = "ipv4.uk"
-						}
-						LC.SetStore(ctx, string(ipn.CurrentServerCodeKey), newServerCode)
-					}
-				}
-			case <-gui.optDNSMenu.ClickedCh:
-				switchDNSOpt(!gui.optDNSMenu.Checked())
-			case <-gui.optSubnetMenu.ClickedCh:
-				switchSubnetOpt(!gui.optSubnetMenu.Checked())
-			case <-gui.exitNodeMenu.AllowLocalNetworkAccess.ClickedCh:
-				switchAllowLocalNet(!gui.exitNodeMenu.AllowLocalNetworkAccess.Checked())
-			case <-gui.exitNodeMenu.NoneExit.ClickedCh:
-				switchExitNode("")
-			case <-gui.exitNodeMenu.RunExitNode.ClickedCh:
-				if !gui.exitNodeMenu.RunExitNode.Checked() {
-					go func() {
-						feedback := zenity.Question("将该设备用作出口节点意味着您的蜃境网络中的其他设备可以将它们的网络流量通过您的IP发送",
-							zenity.WindowIcon(logo_png),
-							zenity.Title("用作出口节点？"),
-							zenity.OKLabel("确定"),
-							zenity.CancelLabel("取消"))
-						if feedback == nil {
-							turnonExitNode()
-							return
-						} else {
-							return
-						}
-					}()
-				} else {
-					turnoffExitNode()
-				}
-			case <-gui.userConsoleMenu.ClickedCh:
-				open.Run(control_url + "/admin")
-			case <-gui.loginMenu.ClickedCh:
-				serverCodeData, err := LC.GetStore(ctx, string(ipn.CurrentServerCodeKey))
-				if err != nil && !strings.Contains(err.Error(), ipn.ErrStateNotExist.Error()) {
-					logNotify("读取服务器代码出错", err)
-				} else if err != nil && strings.Contains(err.Error(), ipn.ErrStateNotExist.Error()) || serverCodeData == nil || string(serverCodeData) == "" {
-					newServerCode, err := zenity.Entry("请输入您接入的控制器代码（留空默认）:",
-						zenity.WindowIcon(logo_png),
-						zenity.Title("初始化"),
-						zenity.OKLabel("确定"),
-						zenity.CancelLabel("取消"))
-					if err == nil {
-						if newServerCode == "" {
-							newServerCode = "ipv4.uk"
-						}
-						err := LC.SetStore(ctx, string(ipn.CurrentServerCodeKey), newServerCode)
-						if err != nil {
-							logNotify("设置服务器代码出错", err)
-							break
-						}
-						control_url = "https://sdp." + newServerCode
-						if !strings.Contains(newServerCode, ".") {
-							control_url = control_url + ".com"
-						}
-						st := getST()
-						if st.BackendState != "Running" {
-							kickLogin()
-						}
-						LC.StartLoginInteractive(ctx)
-					}
-				} else {
-					serverCode := string(serverCodeData)
-					control_url = "https://sdp." + serverCode
-					if !strings.Contains(serverCode, ".") {
-						control_url = control_url + ".com"
-					}
-
-					st := getST()
-					if st.BackendState != "Running" {
-						kickLogin()
-					}
-					LC.StartLoginInteractive(ctx)
-				}
-			case <-gui.userLogoutMenu.ClickedCh:
-				LC.Logout(ctx)
-			case <-gui.connectMenu.ClickedCh:
-				doConn()
-			case <-gui.disconnMenu.ClickedCh:
-				doDisconn()
-			case <-gui.nodeMenu.ClickedCh:
-				st := getST()
-				if len(st.TailscaleIPs) > 0 {
-					clipboard.WriteAll(st.TailscaleIPs[0].String())
-					logNotify("您的本设备IP已复制", errors.New(""))
-				}
-			case <-netMapChn:
-				st := getST()
-				if st.BackendState == "Stopped" {
-					refreshPrefs()
-					go gui.setStopped(st.User[st.Self.UserID].DisplayName, backVersion)
-				} else if st.BackendState == "Running" {
-					lastDays := ""
-					if !st.Self.KeyExpiry.After(time.Now().AddDate(0, 0, 7)) {
-						lastDays = strings.TrimSuffix((st.Self.KeyExpiry.Sub(time.Now()) / time.Duration(time.Hour*24)).String(), "ns")
-					}
-					if st.TailscaleIPs[0].Is4() {
-						go gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[0].String(), backVersion, lastDays)
-					} else {
-						go gui.setRunning(st.User[st.Self.UserID].DisplayName, strings.Split(st.Self.DNSName, ".")[0], st.TailscaleIPs[1].String(), backVersion, lastDays)
-					}
-					refreshPrefs()
-					gui.nodeListMenu.update(st)
-					gui.exitNodeMenu.update(st)
-				}
-				fmt.Println("Refresh menu due to netmap rcvd")
-			case <-prefChn:
-				refreshPrefs()
-			}
-
-		}
-	}()
-}
-
-func doConn() {
-	_, err := LC.EditPrefs(ctx, &ipn.MaskedPrefs{
-		Prefs: ipn.Prefs{
-			WantRunning: true,
-		},
-		WantRunningSet: true,
-	})
-	if err != nil {
-		log.Printf("Change state to run failed!")
-		return
-	}
-}
-
-func doDisconn() {
-	st, err := LC.Status(ctx)
-	if err != nil {
-		log.Printf("Get current status failed!")
-		return
-	}
-	if st.BackendState == "Running" || st.BackendState == "Starting" {
-		_, err = LC.EditPrefs(ctx, &ipn.MaskedPrefs{
-			Prefs: ipn.Prefs{
-				WantRunning: false,
-			},
-			WantRunningSet: true,
-		})
-		if err != nil {
-			log.Printf("Disconnect failed!")
-		}
-	}
-}
-
-func getST() *ipnstate.Status {
-	st, err := LC.Status(ctx)
-	if err != nil || st == nil {
-		log.Printf(`Get Status ERROR!`)
-		return nil
-	} else {
-		backVersion = "蜃境" + strings.Split(st.Version, "-")[0]
-		return st
-	}
+	MM.Start()
 }
