@@ -54,7 +54,7 @@ func (m *MiraMenu) doLogin() {
 		go m.SendNotify("读取服务器代码出错", err.Error(), NL_Error)
 	} else if err != nil && strings.Contains(err.Error(), ipn.ErrStateNotExist.Error()) || serverCodeData == nil || string(serverCodeData) == "" {
 		m.tray.SetVisible(false)
-		confirm, newServerCode := popTextInputDlg("初始化", "请输入您接入的控制器代码（留空默认）:")
+		confirm, newServerCode := PopTextInputDlg("初始化", "请输入您接入的控制器代码（留空默认）:")
 		m.tray.SetVisible(true)
 		log.Printf("doLogin: %v, %v", confirm, newServerCode)
 		if confirm {
@@ -105,7 +105,7 @@ func (m *MiraMenu) kickLogin() {
 		go m.SendNotify("Pref出错", err.Error(), NL_Error)
 	}
 	if err := m.lc.Start(m.ctx, ipn.Options{
-		AuthKey:     "",
+		AuthKey:     m.backendData.AuthKey,
 		UpdatePrefs: prefs,
 	}); err != nil {
 		go m.SendNotify("无法开始", err.Error(), NL_Error)
@@ -213,7 +213,7 @@ func PopConfirmDlg(title, msg string, w, h int) (confirm bool) {
 // label: 标签
 // confirm: 用户是否确认
 // value: 用户输入的值
-func popTextInputDlg(title, inputtip string) (confirm bool, value string) {
+func PopTextInputDlg(title, inputtip string) (confirm bool, value string) {
 	dlg, err := walk.NewDialogWithFixedSize(nil)
 	if err != nil {
 		log.Printf("[工具人] 创建对话框出错: %v", err)
@@ -280,7 +280,7 @@ func (m *MiraMenu) showAbout() {
 			msg += "\n有更新版本：" + m.backendData.ClientVersion.LatestVersion + "\n是否去更新？"
 			msgid := walk.MsgBox(m.mw, "关于蜃境", msg, walk.MsgBoxIconInformation|walk.MsgBoxOKCancel)
 			if msgid == 1 {
-				openURLInBrowser(m.backendData.ClientVersion.NotifyURL)
+				m.openURLInBrowser(m.backendData.ClientVersion.NotifyURL)
 			}
 			return
 		} else {

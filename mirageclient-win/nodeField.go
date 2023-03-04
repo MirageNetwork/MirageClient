@@ -11,7 +11,7 @@ type nodeField struct {
 	nodesMenu  *walk.Action // 网络设备菜单
 }
 
-func NewNodeField(al *walk.ActionList, rs *runState, bd *backendData) (nf *nodeField, err error) {
+func (m *MiraMenu) newNodeField() (nf *nodeField, err error) {
 	nf = &nodeField{}
 	nf.nodeAction = walk.NewAction()
 	nf.nodeAction.SetText("本设备")
@@ -25,8 +25,8 @@ func NewNodeField(al *walk.ActionList, rs *runState, bd *backendData) (nf *nodeF
 	nf.nodesMenu.SetText("网内设备")
 	nf.nodesMenu.SetVisible(false)
 
-	rs.Changed().Attach(func(data interface{}) {
-		state := data.(int)
+	m.backendData.StateChanged().Attach(func(data interface{}) {
+		state := data.(ipn.State)
 		switch ipn.State(state) {
 		case ipn.Stopped, ipn.Starting:
 			nf.nodeAction.SetText("本设备")
@@ -45,13 +45,13 @@ func NewNodeField(al *walk.ActionList, rs *runState, bd *backendData) (nf *nodeF
 		}
 	})
 
-	if err := al.Add(nf.nodeAction); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(nf.nodeAction); err != nil {
 		return nil, err
 	}
-	if err := al.Add(nf.nodesMenu); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(nf.nodesMenu); err != nil {
 		return nil, err
 	}
-	if err := al.Add(walk.NewSeparatorAction()); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(walk.NewSeparatorAction()); err != nil {
 		return nil, err
 	}
 	return nf, nil

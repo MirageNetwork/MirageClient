@@ -11,7 +11,7 @@ type connectField struct {
 	disconnectAction *walk.Action // 断开按钮
 }
 
-func NewConnectField(al *walk.ActionList, rs *runState) (cf *connectField, err error) {
+func (m *MiraMenu) newConnectField() (cf *connectField, err error) {
 	cf = &connectField{}
 	cf.loginAction = walk.NewAction()
 	cf.loginAction.SetText("登录…")
@@ -22,8 +22,8 @@ func NewConnectField(al *walk.ActionList, rs *runState) (cf *connectField, err e
 	cf.disconnectAction.SetVisible(false)
 
 	// 待登录态连接区样式
-	rs.Changed().Attach(func(data interface{}) {
-		state := data.(int)
+	m.backendData.StateChanged().Attach(func(data interface{}) {
+		state := data.(ipn.State)
 		switch ipn.State(state) {
 		case ipn.Stopped:
 			cf.connectAction.SetText("连接")
@@ -52,16 +52,16 @@ func NewConnectField(al *walk.ActionList, rs *runState) (cf *connectField, err e
 		}
 	})
 
-	if err := al.Add(cf.loginAction); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(cf.loginAction); err != nil {
 		return nil, err
 	}
-	if err := al.Add(cf.connectAction); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(cf.connectAction); err != nil {
 		return nil, err
 	}
-	if err := al.Add(cf.disconnectAction); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(cf.disconnectAction); err != nil {
 		return nil, err
 	}
-	if err := al.Add(walk.NewSeparatorAction()); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(walk.NewSeparatorAction()); err != nil {
 		return nil, err
 	}
 	return cf, nil

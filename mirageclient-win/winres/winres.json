@@ -14,7 +14,7 @@
       "0804": {
         "identity": {
           "name": "蜃境",
-          "version": "1.37.0227"
+          "version": "1.37.0"
         },
         "description": "蜃境-简单安全的组网工具",
         "minimum-os": "win7",
@@ -38,22 +38,22 @@
     "#1": {
       "0000": {
         "fixed": {
-          "file_version": "1.37.0.0227",
-          "product_version": "1.37.0.0227"
+          "file_version": "1.37.0",
+          "product_version": "1.37.0"
         },
         "info": {
           "0804": {
             "Comments": "安全组网工具",
             "CompanyName": "蜃境网络",
             "FileDescription": "蜃境",
-            "FileVersion": "1.37.0.0227",
+            "FileVersion": "1.37.0",
             "InternalName": "Mirage",
             "LegalCopyright": "",
             "LegalTrademarks": "",
             "OriginalFilename": "",
             "PrivateBuild": "",
             "ProductName": "蜃境",
-            "ProductVersion": "1.37.0.0227",
+            "ProductVersion": "1.37.0",
             "SpecialBuild": ""
           }
         }

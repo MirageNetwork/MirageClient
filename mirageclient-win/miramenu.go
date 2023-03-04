@@ -10,7 +10,6 @@ import (
 	"github.com/tailscale/walk"
 	"tailscale.com/client/tailscale"
 	"tailscale.com/ipn"
-	"tailscale.com/mirageclient-win/utils"
 	"tailscale.com/net/tsaddr"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/netmap"
@@ -22,6 +21,7 @@ type MiraMenu struct {
 
 	rx         chan interface{}
 	tx         chan interface{}
+	rcvdRx     *DataEventPublisher
 	startWatch func(context.Context, tailscale.LocalClient) error
 
 	ctx         context.Context
@@ -29,9 +29,6 @@ type MiraMenu struct {
 	lc          tailscale.LocalClient
 	control_url string
 
-	prefsLoader func() (*ipn.Prefs, error)
-
-	runState    *runState
 	backendData *backendData
 
 	connectField *connectField
@@ -46,11 +43,11 @@ type MiraMenu struct {
 
 func (s *MiraMenu) Init() {
 	var err error
-
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.lc = tailscale.LocalClient{
 		Socket:        socket_path,
 		UseSocketOnly: false}
+	s.rcvdRx = &DataEventPublisher{}
 
 	s.mw, err = walk.NewMainWindow()
 	if err != nil {
@@ -67,7 +64,7 @@ func (s *MiraMenu) Init() {
 		if button == walk.LeftButton {
 			if s.backendData.magicCounter == 0 {
 				go func() {
-					<-time.After(2 * time.Second)
+					<-time.After(1 * time.Second)
 					s.backendData.magicCounter = 0
 				}()
 			}
@@ -75,65 +72,43 @@ func (s *MiraMenu) Init() {
 			if s.backendData.magicCounter == 5 {
 				s.backendData.magicCounter = 0
 				s.debugAction.SetVisible(true)
-				/*
-					s.tray.SetVisible(false)
-					confirm, newServerCode := popTextInputDlg("重设定", "新控制器代码（留空默认，下次登录生效）:")
-					s.tray.SetVisible(true)
-					log.Printf("doLogin: %v, %v", confirm, newServerCode)
-					if confirm {
-						if newServerCode == "" {
-							newServerCode = "ipv4.uk"
-						}
-						err := s.lc.SetStore(s.ctx, string(ipn.CurrentServerCodeKey), newServerCode)
-						if err != nil {
-							go s.SendNotify("重设置服务器代码出错", err.Error(), NL_Error)
-							return
-						}
-					}
-				*/
 			}
 		}
 	})
 	s.setTip("蜃境-简单安全的组网工具")
 
-	s.runState = NewRunState()
 	s.backendData = NewBackendData()
 
 	s.setIcon(Logo)
-	s.runState.Changed().Attach(func(data interface{}) {
+	s.backendData.StateChanged().Attach(func(data interface{}) {
 		s.changeIconDueRunState(data)
-		go s.SendNotify("已连接", "您已接入安全的蜃境网络", NL_Msg)
-
 	})
 	s.backendData.PrefsChanged().Attach(func(data interface{}) {
 		s.changeIconDueRunState(data)
 		newPrefs := data.(*ipn.Prefs)
 		s.updateCurrentExitNode(newPrefs.ExitNodeID)
-
 	})
 
-	s.connectField, err = NewConnectField(s.tray.ContextMenu().Actions(), s.runState)
+	s.connectField, err = s.newConnectField()
 	if err != nil {
 		log.Printf("初始化连接菜单区错误：%s", err)
 	}
-	s.userField, err = NewUserField(s.tray.ContextMenu().Actions(), s.runState, s.backendData)
+	s.userField, err = s.newUserField()
 	if err != nil {
 		log.Printf("初始化用户菜单区错误：%s", err)
 	}
-	s.nodeField, err = NewNodeField(s.tray.ContextMenu().Actions(), s.runState, s.backendData)
+	s.nodeField, err = s.newNodeField()
 	if err != nil {
 		log.Printf("初始化节点菜单区错误：%s", err)
 	}
-	s.exitField, err = NewExitField(s.tray.ContextMenu().Actions(), s.runState, s.backendData)
+	s.exitField, err = s.newExitField()
 	if err != nil {
 		log.Printf("初始化出口节点菜单区错误：%s", err)
 	}
-	s.prefField, err = NewPrefField(s.tray.ContextMenu().Actions(), s.runState)
+	s.prefField, err = s.newPrefField()
 	if err != nil {
 		log.Printf("初始化配置项菜单区错误：%s", err)
 	}
-
-	s.prefField.bindBackendDataChange(s.backendData)
 
 	resetAction := walk.NewAction()
 	resetAction.SetText("#重置服务器并登出")
@@ -151,6 +126,33 @@ func (s *MiraMenu) Init() {
 			if err != nil {
 				go s.SendNotify("登出出错", err.Error(), NL_Error)
 				return
+			}
+		}
+	})
+
+	setAuthKeyAction := walk.NewAction()
+	setAuthKeyAction.SetText("#设置授权密钥")
+	setAuthKeyAction.Triggered().Attach(func() {
+		s.tray.SetVisible(false)
+		confirm, authKey := PopTextInputDlg("设置授权密钥登录", "请输入您的授权密钥")
+		s.tray.SetVisible(true)
+		if confirm {
+			s.backendData.SetAuthKey(authKey)
+			if s.backendData.State > 2 {
+				s.lc.Logout(s.ctx)
+			}
+		}
+	})
+	cleanAuthKeyAction := walk.NewAction()
+	cleanAuthKeyAction.SetText("#清除授权密钥并登出")
+	cleanAuthKeyAction.Triggered().Attach(func() {
+		s.tray.SetVisible(false)
+		confirm := PopConfirmDlg("清除授权密钥", "是否要清除授权密钥并登出？", 200, 100)
+		s.tray.SetVisible(true)
+		if confirm {
+			s.backendData.SetAuthKey("")
+			if s.backendData.State > 2 {
+				s.lc.Logout(s.ctx)
 			}
 		}
 	})
@@ -173,6 +175,8 @@ func (s *MiraMenu) Init() {
 	if err != nil {
 		log.Printf("初始化调试菜单区错误：%s", err)
 	}
+	debugContain.Actions().Add(setAuthKeyAction)
+	debugContain.Actions().Add(cleanAuthKeyAction)
 	debugContain.Actions().Add(resetAction)
 	debugContain.Actions().Add(uninstallServiceAction)
 	s.debugAction = walk.NewMenuAction(debugContain)
@@ -216,6 +220,7 @@ func (s *MiraMenu) Init() {
 			s.SendNotify("我的地址", "已复制IP地址 ("+selfIPv4.String()+") 到剪贴板", NL_Info)
 		}
 	})
+	s.bindBackendDataChange()
 	s.backendData.NetmapChanged().Attach(func(data interface{}) {
 		// 更新本设备信息
 		netmap := data.(*netmap.NetworkMap)
@@ -410,9 +415,10 @@ func (s *MiraMenu) SetWatchStart(starter func(context.Context, tailscale.LocalCl
 	s.startWatch = starter
 }
 func (s *MiraMenu) handleRx() {
+	var newMsg interface{}
 	for {
 		select {
-		case newMsg := <-s.rx:
+		case newMsg = <-s.rx:
 			// 开启通讯员
 			switch newMsg.(type) {
 			case error: // 遇到通讯员无法恢复严重错误崩溃，导致程序只能由用户选择重启动通讯员或者退出程序
@@ -427,39 +433,75 @@ func (s *MiraMenu) handleRx() {
 					}
 				}(newMsg.(error).Error())
 			case ipn.State: // 状态更新
-				s.UpdateRunState(newMsg.(ipn.State))
-			case utils.BackendVersion:
-				s.UpdateVersion(string(newMsg.(utils.BackendVersion)))
+				s.UpdateRunState(newMsg.(ipn.State).String())
+			case BackendVersion:
+				s.UpdateVersion(string(newMsg.(BackendVersion)))
 			case *ipn.Prefs:
 				s.UpdatePrefs(newMsg.(*ipn.Prefs))
 			case *netmap.NetworkMap:
 				s.UpdateNetmap(newMsg.(*netmap.NetworkMap))
 			}
 		}
+		s.rcvdRx.Publish(newMsg)
 	}
 }
 
 func (s *MiraMenu) Start() {
+	defer s.cancel()
 	defer s.tray.Dispose()
 
 	go s.handleRx()
-	go s.startWatch(s.ctx, s.lc)
 
-	isAutoStartUp, err := s.lc.GetAutoStartUp(s.ctx)
-	if err != nil {
-		log.Printf("获取自启动状态失败：%s", err)
+	for {
+		go s.startWatch(s.ctx, s.lc)
+
+		firstRx := make(chan interface{})
+		s.rcvdRx.Event().Once(func(data interface{}) {
+			firstRx <- data
+		})
+		msg := <-firstRx
+		switch msg.(type) {
+		case error:
+			confirm := PopConfirmDlg("严重错误", "程序通讯员报错:"+msg.(error).Error()+" 无法执行，重试还是退出？", 300, 150)
+			if confirm {
+				s.cancel()
+				s.ctx, s.cancel = context.WithCancel(context.Background())
+				go s.startWatch(s.ctx, s.lc)
+			} else {
+				walk.App().Exit(-1)
+				return
+			}
+		case *WatcherUpEvent:
+			isAutoStartUp, err := s.lc.GetAutoStartUp(s.ctx)
+			if err != nil {
+				log.Printf("获取自启动状态失败：%s", err)
+			} else {
+			}
+			s.prefField.autoStartUpAction.SetChecked(isAutoStartUp)
+			s.prefField.autoStartUpAction.Triggered().Attach(func() {
+				s.lc.SetAutoStartUp(s.ctx)
+			})
+
+			prefs, err := s.lc.GetPrefs(s.ctx)
+			if err != nil {
+				s.SendNotify("加载配置错误", err.Error(), NL_Error) // 通知栏提示
+				log.Printf("加载配置错误：%s", err)
+				return
+			}
+			log.Printf("加载配置：%v", prefs)
+			st, err := s.lc.Status(s.ctx)
+			if err != nil {
+				s.SendNotify("加载状态错误", err.Error(), NL_Error) // 通知栏提示
+				log.Printf("加载状态错误：%s", err)
+				return
+			}
+			log.Printf("状态：%v", st)
+
+			s.UpdatePrefs(prefs)
+			s.UpdateVersion(st.Version)
+			s.UpdateRunState(st.BackendState)
+
+			s.mw.Run()
+		}
 	}
-	s.prefField.autoStartUpAction.SetChecked(isAutoStartUp)
-	s.prefField.autoStartUpAction.Triggered().Attach(func() {
-		s.lc.SetAutoStartUp(s.ctx)
-	})
-	s.SetPrefsLoader(func() (*ipn.Prefs, error) {
-		prefs, err := s.lc.GetPrefs(s.ctx)
-		return prefs, err
-	})
-	s.backendData.LoadPrefs(s.prefsLoader)
-	st, err := s.lc.Status(s.ctx)
-	log.Printf("状态：%v", st)
-
-	s.mw.Run()
 }

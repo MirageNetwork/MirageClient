@@ -14,7 +14,6 @@ import (
 
 	"github.com/skratchdot/open-golang/open"
 	"tailscale.com/client/tailscale"
-	"tailscale.com/mirageclient-win/utils"
 )
 
 type MiraWatcher struct { // 通讯协程实体
@@ -36,17 +35,6 @@ func NewWatcher() *MiraWatcher {
 		Rx:        make(chan interface{}, 5), // TODO:暂时设置缓存5条
 		Tx:        make(chan interface{}, 5), // TODO:暂时设置缓存5条
 	}
-}
-
-func (w *MiraWatcher) GetStatus() bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.isRunning
-}
-func (w *MiraWatcher) SetStatus(v bool) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.isRunning = v
 }
 
 func (w *MiraWatcher) Start(ctx context.Context, LC tailscale.LocalClient) error {
@@ -87,12 +75,14 @@ func (w *MiraWatcher) WatchDaemon(ctx context.Context, LC tailscale.LocalClient)
 	for {
 		if err == nil {
 			log.Printf("守护进程监听管道建立完成")
+			w.Tx <- new(WatcherUpEvent)
 			break
 		} else if retryCounter < 0 {
 			err = errors.New("无法建立守护进程监听管道:" + err.Error())
 			w.Tx <- err
 			return // Todo
 		}
+
 		log.Printf("守护进程监听管道建立失败,等待1秒重试:" + err.Error())
 		<-time.After(time.Second * 1)
 		retryCounter--
@@ -119,7 +109,7 @@ func (w *MiraWatcher) WatchDaemon(ctx context.Context, LC tailscale.LocalClient)
 		}
 		if v := n.Version; v != "" {
 			log.Printf("[通讯兵] 收到版本号: %s", v)
-			w.Tx <- utils.BackendVersion(v)
+			w.Tx <- BackendVersion(v)
 		}
 
 		if nm := n.NetMap; nm != nil {

@@ -20,7 +20,7 @@ type userField struct {
 	logoutAction *walk.Action // 登出按钮
 }
 
-func NewUserField(al *walk.ActionList, rs *runState, bd *backendData) (uf *userField, err error) {
+func (m *MiraMenu) newUserField() (uf *userField, err error) {
 	uf = &userField{}
 	userMenuContain, err := walk.NewMenu()
 	if err != nil {
@@ -39,8 +39,8 @@ func NewUserField(al *walk.ActionList, rs *runState, bd *backendData) (uf *userF
 	uf.userMenu.Menu().Actions().Add(walk.NewSeparatorAction())
 	uf.userMenu.Menu().Actions().Add(uf.logoutAction)
 
-	rs.Changed().Attach(func(data interface{}) {
-		state := data.(int)
+	m.backendData.StateChanged().Attach(func(data interface{}) {
+		state := data.(ipn.State)
 		switch ipn.State(state) {
 		case ipn.Stopped, ipn.Starting, ipn.Running:
 			uf.userMenu.SetVisible(true)
@@ -48,22 +48,22 @@ func NewUserField(al *walk.ActionList, rs *runState, bd *backendData) (uf *userF
 			uf.userMenu.SetVisible(false)
 		}
 	})
-	bd.PrefsChanged().Attach(func(data interface{}) {
+	m.backendData.PrefsChanged().Attach(func(data interface{}) {
 		prefs := data.(*ipn.Prefs)
 		uf.consoleAction.SetVisible(prefs.AdminPageURL() != "")
 	})
 
-	bd.NetmapChanged().Attach(func(data interface{}) {
+	m.backendData.NetmapChanged().Attach(func(data interface{}) {
 		netmap := data.(*netmap.NetworkMap)
 		uf.userMenu.SetText(netmap.UserProfiles[netmap.SelfNode.User].DisplayName)
 	})
 
-	uf.consoleAction.Triggered().Attach(func() { openURLInBrowser(bd.Prefs.AdminPageURL()) })
+	uf.consoleAction.Triggered().Attach(func() { m.openURLInBrowser(m.backendData.Prefs.AdminPageURL()) })
 
-	if err := al.Add(uf.userMenu); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(uf.userMenu); err != nil {
 		return nil, err
 	}
-	if err := al.Add(walk.NewSeparatorAction()); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(walk.NewSeparatorAction()); err != nil {
 		return nil, err
 	}
 

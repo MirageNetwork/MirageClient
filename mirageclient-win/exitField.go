@@ -18,7 +18,7 @@ type exitField struct {
 	exitRunExitAction    *walk.Action // 出口节点配置项 -- 用作出口节点
 }
 
-func NewExitField(al *walk.ActionList, rs *runState, bd *backendData) (ef *exitField, err error) {
+func (m *MiraMenu) newExitField() (ef *exitField, err error) {
 	ef = &exitField{}
 	exitNodeContain, err := walk.NewMenu()
 	if err != nil {
@@ -55,8 +55,8 @@ func NewExitField(al *walk.ActionList, rs *runState, bd *backendData) (ef *exitF
 	ef.exitNodeMenu.Menu().Actions().Add(ef.exitAllowLocalAction)
 	ef.exitNodeMenu.Menu().Actions().Add(ef.exitRunExitAction)
 
-	rs.Changed().Attach(func(data interface{}) {
-		state := data.(int)
+	m.backendData.StateChanged().Attach(func(data interface{}) {
+		state := data.(ipn.State)
 		switch ipn.State(state) {
 		case ipn.Stopped, ipn.Starting:
 			ef.exitNodeMenu.SetEnabled(false)
@@ -68,7 +68,7 @@ func NewExitField(al *walk.ActionList, rs *runState, bd *backendData) (ef *exitF
 			ef.exitNodeMenu.SetVisible(false)
 		}
 	})
-	bd.PrefsChanged().Attach(func(data interface{}) {
+	m.backendData.PrefsChanged().Attach(func(data interface{}) {
 		prefs := data.(*ipn.Prefs)
 		ef.exitAllowLocalAction.SetChecked(prefs.ExitNodeAllowLANAccess)
 
@@ -81,10 +81,10 @@ func NewExitField(al *walk.ActionList, rs *runState, bd *backendData) (ef *exitF
 		}
 	})
 
-	if err := al.Add(ef.exitNodeMenu); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(ef.exitNodeMenu); err != nil {
 		return nil, err
 	}
-	if err := al.Add(walk.NewSeparatorAction()); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(walk.NewSeparatorAction()); err != nil {
 		return nil, err
 	}
 	return ef, nil

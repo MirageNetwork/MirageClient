@@ -20,7 +20,7 @@ type prefField struct {
 	aboutAction *walk.Action // 关于菜单
 }
 
-func NewPrefField(al *walk.ActionList, rs *runState) (pf *prefField, err error) {
+func (m *MiraMenu) newPrefField() (pf *prefField, err error) {
 
 	pf = &prefField{}
 	prefContain, err := walk.NewMenu()
@@ -69,24 +69,24 @@ func NewPrefField(al *walk.ActionList, rs *runState) (pf *prefField, err error) 
 	pf.prefMenu.Menu().Actions().Add(pf.prefToDefaultAction)
 	pf.prefMenu.Menu().Actions().Add(pf.autoStartUpAction)
 
-	if err := al.Add(pf.prefMenu); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(pf.prefMenu); err != nil {
 		return nil, err
 	}
-	if err := al.Add(pf.aboutAction); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(pf.aboutAction); err != nil {
 		return nil, err
 	}
-	if err := al.Add(walk.NewSeparatorAction()); err != nil {
+	if err := m.tray.ContextMenu().Actions().Add(walk.NewSeparatorAction()); err != nil {
 		return nil, err
 	}
 	return pf, nil
 }
 
-func (pf *prefField) bindBackendDataChange(bd *backendData) {
-	bd.PrefsChanged().Attach(func(data interface{}) {
+func (m *MiraMenu) bindBackendDataChange() {
+	m.backendData.PrefsChanged().Attach(func(data interface{}) {
 		newPref := data.(*ipn.Prefs)
-		pf.prefAllowIncomeAction.SetChecked(!newPref.ShieldsUp)
-		pf.prefUsingDNSAction.SetChecked(newPref.CorpDNS)
-		pf.prefUsingSubnetAction.SetChecked(newPref.RouteAll)
-		pf.prefUnattendAction.SetChecked(newPref.ForceDaemon)
+		m.prefField.prefAllowIncomeAction.SetChecked(!newPref.ShieldsUp)
+		m.prefField.prefUsingDNSAction.SetChecked(newPref.CorpDNS)
+		m.prefField.prefUsingSubnetAction.SetChecked(newPref.RouteAll)
+		m.prefField.prefUnattendAction.SetChecked(newPref.ForceDaemon)
 	})
 }
