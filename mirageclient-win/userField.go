@@ -2,8 +2,6 @@ package main
 
 import (
 	"github.com/tailscale/walk"
-	"tailscale.com/ipn"
-	"tailscale.com/types/netmap"
 )
 
 // 用户菜单区
@@ -39,26 +37,7 @@ func (m *MiraMenu) newUserField() (uf *userField, err error) {
 	uf.userMenu.Menu().Actions().Add(walk.NewSeparatorAction())
 	uf.userMenu.Menu().Actions().Add(uf.logoutAction)
 
-	m.backendData.StateChanged().Attach(func(data interface{}) {
-		state := data.(ipn.State)
-		switch ipn.State(state) {
-		case ipn.Stopped, ipn.Starting, ipn.Running:
-			uf.userMenu.SetVisible(true)
-		default:
-			uf.userMenu.SetVisible(false)
-		}
-	})
-	m.backendData.PrefsChanged().Attach(func(data interface{}) {
-		prefs := data.(*ipn.Prefs)
-		uf.consoleAction.SetVisible(prefs.AdminPageURL() != "")
-	})
-
-	m.backendData.NetmapChanged().Attach(func(data interface{}) {
-		netmap := data.(*netmap.NetworkMap)
-		uf.userMenu.SetText(netmap.UserProfiles[netmap.SelfNode.User].DisplayName)
-	})
-
-	uf.consoleAction.Triggered().Attach(func() { m.openURLInBrowser(m.backendData.Prefs.AdminPageURL()) })
+	uf.consoleAction.Triggered().Attach(func() { OpenURLInBrowser(m.data.Prefs.AdminPageURL()) })
 
 	if err := m.tray.ContextMenu().Actions().Add(uf.userMenu); err != nil {
 		return nil, err

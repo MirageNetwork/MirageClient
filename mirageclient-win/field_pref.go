@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/tailscale/walk"
-	"tailscale.com/ipn"
 )
 
 // 配置菜单区
@@ -79,14 +78,4 @@ func (m *MiraMenu) newPrefField() (pf *prefField, err error) {
 		return nil, err
 	}
 	return pf, nil
-}
-
-func (m *MiraMenu) bindBackendDataChange() {
-	m.backendData.PrefsChanged().Attach(func(data interface{}) {
-		newPref := data.(*ipn.Prefs)
-		m.prefField.prefAllowIncomeAction.SetChecked(!newPref.ShieldsUp)
-		m.prefField.prefUsingDNSAction.SetChecked(newPref.CorpDNS)
-		m.prefField.prefUsingSubnetAction.SetChecked(newPref.RouteAll)
-		m.prefField.prefUnattendAction.SetChecked(newPref.ForceDaemon)
-	})
 }

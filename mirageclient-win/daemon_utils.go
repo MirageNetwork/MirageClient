@@ -17,8 +17,6 @@ import (
 	"tailscale.com/types/logger"
 )
 
-const debugPort = ":54321"
-
 func babysitProc(ctx context.Context, args []string, logf logger.Logf) {
 
 	executable, err := os.Executable()

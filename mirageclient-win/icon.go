@@ -11,7 +11,7 @@ import (
 //go:embed logos
 var iconDir embed.FS
 
-var icons []*walk.Icon
+var Icons []*walk.Icon
 
 type IconType int
 
@@ -26,7 +26,7 @@ const (
 	Ing2
 )
 
-var IconTypes = map[IconType]string{
+var iconName = map[IconType]string{
 	Logo:     "logo",
 	Disconn:  "disconn",
 	Conn:     "conn",
@@ -37,7 +37,7 @@ var IconTypes = map[IconType]string{
 	Ing2:     "ing2"}
 
 func (ico IconType) String() string {
-	return IconTypes[ico]
+	return iconName[ico]
 }
 
 func (ico IconType) load() (*walk.Icon, error) {
@@ -58,9 +58,9 @@ func (ico IconType) load() (*walk.Icon, error) {
 
 func init() {
 	var err error
-	icons = make([]*walk.Icon, len(IconTypes))
-	for i := range IconTypes {
-		icons[i], err = i.load()
+	Icons = make([]*walk.Icon, len(iconName))
+	for i := range iconName {
+		Icons[i], err = i.load()
 		if err != nil {
 			log.Fatal(err)
 		}

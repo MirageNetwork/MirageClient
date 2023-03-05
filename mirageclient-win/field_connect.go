@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/tailscale/walk"
-	"tailscale.com/ipn"
 )
 
 type connectField struct {
@@ -22,35 +21,6 @@ func (m *MiraMenu) newConnectField() (cf *connectField, err error) {
 	cf.disconnectAction.SetVisible(false)
 
 	// 待登录态连接区样式
-	m.backendData.StateChanged().Attach(func(data interface{}) {
-		state := data.(ipn.State)
-		switch ipn.State(state) {
-		case ipn.Stopped:
-			cf.connectAction.SetText("连接")
-			cf.connectAction.SetEnabled(true)
-			cf.connectAction.SetVisible(true)
-			cf.disconnectAction.SetVisible(false)
-			cf.loginAction.SetVisible(false)
-		case ipn.Starting:
-			cf.connectAction.SetEnabled(false)
-			cf.connectAction.SetText("正在连接……")
-			cf.connectAction.SetVisible(true)
-			cf.disconnectAction.SetEnabled(true)
-			cf.disconnectAction.SetVisible(true)
-			cf.loginAction.SetVisible(false)
-		case ipn.Running:
-			cf.connectAction.SetText("已连接")
-			cf.connectAction.SetEnabled(false)
-			cf.connectAction.SetVisible(true)
-			cf.disconnectAction.SetEnabled(true)
-			cf.disconnectAction.SetVisible(true)
-			cf.loginAction.SetVisible(false)
-		default:
-			cf.connectAction.SetVisible(false)
-			cf.disconnectAction.SetVisible(false)
-			cf.loginAction.SetVisible(true)
-		}
-	})
 
 	if err := m.tray.ContextMenu().Actions().Add(cf.loginAction); err != nil {
 		return nil, err

@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -76,7 +77,7 @@ type serverOptions struct {
 func beWindowsSubprocess() bool {
 	exePath, err := os.Executable()
 	if err != nil {
-		log.Printf("无法获取当前执行路径")
+		log.Fatalf("无法获取当前执行路径")
 	}
 	err = windows.SetDllDirectory(filepath.Dir(exePath))
 	if err != nil {
@@ -89,6 +90,10 @@ func beWindowsSubprocess() bool {
 
 	if !args.asServiceSubProc { // 非防火墙设置和子进程
 		return false
+	}
+	dll := windows.NewLazyDLL("wintun.dll")
+	if err := dll.Load(); err != nil {
+		log.Fatalf("Cannot load wintun.dll for daemon: %v", err)
 	}
 
 	logid := args.logid // 传入的logtail ID
@@ -164,7 +169,7 @@ func beFirewallKillswitch() bool {
 
 // 实际创建daemon IPN
 func StartDaemon(ctx context.Context, logf logger.Logf, logid string) error { // lbChn chan *ipnlocal.LocalBackend) {
-	ln, err := safesocket.Listen(socket_path)
+	ln, err := safesocket.Listen(socketPath)
 	if err != nil {
 		return fmt.Errorf("safesocket.Listen: %v", err)
 	}
@@ -240,13 +245,13 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logid string) (_ *ip
 	if _, ok := e.(wgengine.ResolvingEngine).GetResolver(); !ok {
 		panic("internal error: exit node resolver not wired up")
 	}
-	if debugMux != nil {
+	if debugMux != nil && debugPort > 0 && debugPort < 65536 {
 		if ig, ok := e.(wgengine.InternalsGetter); ok {
 			if _, mc, _, ok := ig.GetInternals(); ok {
 				debugMux.HandleFunc("/debug/magicsock", mc.ServeHTTPDebug)
 			}
 		}
-		go runDebugServer(debugMux, debugPort)
+		go runDebugServer(debugMux, ":"+strconv.FormatInt(debugPort, 10))
 	}
 
 	ns, err := newNetstack(logf, dialer, e)
@@ -269,10 +274,10 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logid string) (_ *ip
 	e = wgengine.NewWatchdog(e)
 
 	opts := serverOptions{
-		VarRoot: program_path,
+		VarRoot: programPath,
 	}
 
-	store, err := store.New(logf, filepath.Join(program_path, "server-state.conf"))
+	store, err := store.New(logf, filepath.Join(programPath, "server-state.conf"))
 	if err != nil {
 		return nil, fmt.Errorf("store.New: %w", err)
 	}
@@ -317,7 +322,7 @@ var tstunNew = tstun.New
 
 func tryEngine(logf logger.Logf, linkMon *monitor.Mon, dialer *tsdial.Dialer, name string) (e wgengine.Engine, onlyNetstack bool, err error) {
 	conf := wgengine.Config{
-		ListenPort:  engine_port,
+		ListenPort:  enginePort,
 		LinkMonitor: linkMon,
 		Dialer:      dialer,
 	}

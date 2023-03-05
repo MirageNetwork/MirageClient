@@ -55,32 +55,6 @@ func (m *MiraMenu) newExitField() (ef *exitField, err error) {
 	ef.exitNodeMenu.Menu().Actions().Add(ef.exitAllowLocalAction)
 	ef.exitNodeMenu.Menu().Actions().Add(ef.exitRunExitAction)
 
-	m.backendData.StateChanged().Attach(func(data interface{}) {
-		state := data.(ipn.State)
-		switch ipn.State(state) {
-		case ipn.Stopped, ipn.Starting:
-			ef.exitNodeMenu.SetEnabled(false)
-			ef.exitNodeMenu.SetVisible(true)
-		case ipn.Running:
-			ef.exitNodeMenu.SetEnabled(true)
-			ef.exitNodeMenu.SetVisible(true)
-		default:
-			ef.exitNodeMenu.SetVisible(false)
-		}
-	})
-	m.backendData.PrefsChanged().Attach(func(data interface{}) {
-		prefs := data.(*ipn.Prefs)
-		ef.exitAllowLocalAction.SetChecked(prefs.ExitNodeAllowLANAccess)
-
-		if prefs.AdvertisesExitNode() {
-			ef.exitRunExitAction.SetText("正用作出口节点")
-			ef.exitRunExitAction.SetChecked(true)
-		} else {
-			ef.exitRunExitAction.SetText("用作出口节点…")
-			ef.exitRunExitAction.SetChecked(false)
-		}
-	})
-
 	if err := m.tray.ContextMenu().Actions().Add(ef.exitNodeMenu); err != nil {
 		return nil, err
 	}
@@ -98,7 +72,7 @@ func (m *MiraMenu) updateCurrentExitNode(stableID tailcfg.StableNodeID) {
 	if index, ok := m.exitField.exitNodeIDMap[stableID]; ok {
 		m.exitField.exitNodeList.At(index).SetChecked(true)
 	}
-	if node, ok := m.backendData.NetMap.PeerWithStableID(m.backendData.Prefs.ExitNodeID); ok {
+	if node, ok := m.data.NetMap.PeerWithStableID(m.data.Prefs.ExitNodeID); ok {
 		m.exitField.exitNodeMenu.SetText("出口节点(" + node.DisplayName(true) + ")")
 		return
 	}

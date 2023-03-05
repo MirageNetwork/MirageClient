@@ -18,8 +18,6 @@ import (
 )
 
 var MM *MiraMenu
-
-// TODO： 以下新版本模式全局变量
 var logPol *logpolicy.Policy // 日志策略（后台服务logtail使用）
 
 var args struct { // 命令行参数部分
