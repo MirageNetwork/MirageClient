@@ -280,7 +280,7 @@ func isRunningOrStarting(st *ipnstate.Status) (description string, ok bool) {
 		}
 		return s, false
 	case ipn.NeedsMachineAuth.String():
-		return "Machine is not yet authorized by miragenet admin.", false
+		return "Machine is not yet approved by miragenet admin.", false
 	case ipn.Running.String(), ipn.Starting.String():
 		return st.BackendState, true
 	}
