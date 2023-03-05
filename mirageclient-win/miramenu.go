@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"time"
 
 	"github.com/tailscale/walk"
@@ -105,7 +106,7 @@ func (s *MiraMenu) Init() {
 	s.exitAction = walk.NewAction()
 	s.exitAction.SetText("退出")
 	s.exitAction.Triggered().Attach(func() {
-		walk.App().Exit(0)
+		os.Exit(0)
 	})
 
 	s.tray.ContextMenu().Actions().Add(s.exitAction)
@@ -187,7 +188,7 @@ func (s *MiraMenu) Start() {
 				s.ctx, s.cancel = context.WithCancel(context.Background())
 				go s.startWatch(s.ctx, s.lc)
 			} else {
-				walk.App().Exit(-1)
+				os.Exit(-1)
 				return
 			}
 		case *WatcherUpEvent:
