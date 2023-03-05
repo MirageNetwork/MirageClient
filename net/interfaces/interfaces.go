@@ -353,6 +353,12 @@ func (s *State) String() string {
 	return sb.String()
 }
 
+// ChangeFunc is a callback function (usually registered with
+// wgengine/monitor's Mon) that's called when the network
+// changed. The changed parameter is whether the network changed
+// enough for State to have changed since the last callback.
+type ChangeFunc func(changed bool, state *State)
+
 // An InterfaceFilter indicates whether EqualFiltered should use i when deciding whether two States are equal.
 // ips are all the IPPrefixes associated with i.
 type InterfaceFilter func(i Interface, ips []netip.Prefix) bool
@@ -607,8 +613,18 @@ func LikelyHomeRouterIP() (gateway, myIP netip.Addr, ok bool) {
 		return
 	}
 	ForeachInterfaceAddress(func(i Interface, pfx netip.Prefix) {
+		if !i.IsUp() {
+			// Skip interfaces that aren't up.
+			return
+		} else if myIP.IsValid() {
+			// We already have a valid self IP; skip this one.
+			return
+		}
+
 		ip := pfx.Addr()
-		if !i.IsUp() || !ip.IsValid() || myIP.IsValid() {
+		if !ip.IsValid() || !ip.Is4() {
+			// Skip IPs that aren't valid or aren't IPv4, since we
+			// always return an IPv4 address.
 			return
 		}
 		if gateway.IsPrivate() && ip.IsPrivate() {
@@ -755,4 +771,16 @@ func HasCGNATInterface() (bool, error) {
 		return false, err
 	}
 	return hasCGNATInterface, nil
+}
+
+var interfaceDebugExtras func(ifIndex int) (string, error)
+
+// InterfaceDebugExtras returns extra debugging information about an interface
+// if any (an empty string will be returned if there are no additional details).
+// Formatting is platform-dependent and should not be parsed.
+func InterfaceDebugExtras(ifIndex int) (string, error) {
+	if interfaceDebugExtras != nil {
+		return interfaceDebugExtras(ifIndex)
+	}
+	return "", nil
 }

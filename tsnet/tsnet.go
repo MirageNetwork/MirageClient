@@ -8,6 +8,8 @@ package tsnet
 
 import (
 	"context"
+	crand "crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -88,19 +90,22 @@ type Server struct {
 	// If empty, the Tailscale default is used.
 	ControlURL string
 
-	initOnce         sync.Once
-	initErr          error
-	lb               *ipnlocal.LocalBackend
-	netstack         *netstack.Impl
-	linkMon          *monitor.Mon
-	localAPIListener net.Listener
-	rootPath         string // the state directory
-	hostname         string
-	shutdownCtx      context.Context
-	shutdownCancel   context.CancelFunc
-	localClient      *tailscale.LocalClient
-	logbuffer        *filch.Filch
-	logtail          *logtail.Logger
+	initOnce            sync.Once
+	initErr             error
+	lb                  *ipnlocal.LocalBackend
+	netstack            *netstack.Impl
+	linkMon             *monitor.Mon
+	rootPath            string // the state directory
+	hostname            string
+	shutdownCtx         context.Context
+	shutdownCancel      context.CancelFunc
+	localAPICred        string                 // basic auth password for localAPITCPListener
+	localAPITCPListener net.Listener           // optional loopback, restricted to PID
+	localAPIListener    net.Listener           // in-memory, used by localClient
+	localClient         *tailscale.LocalClient // in-memory
+	logbuffer           *filch.Filch
+	logtail             *logtail.Logger
+	logid               string
 
 	mu        sync.Mutex
 	listeners map[listenKey]*listener
@@ -139,6 +144,64 @@ func (s *Server) LocalClient() (*tailscale.LocalClient, error) {
 	return s.localClient, nil
 }
 
+// LoopbackLocalAPI returns a loopback ip:port listening for the "LocalAPI".
+//
+// As the LocalAPI is powerful, access to endpoints requires BOTH passing a
+// "Sec-Tailscale: localapi" HTTP header and passing cred as a basic auth.
+//
+// It will start the server and the local client listener if they have not
+// been started yet.
+//
+// If you only need to use the LocalAPI from Go, then prefer LocalClient
+// as it does not require communication via TCP.
+func (s *Server) LoopbackLocalAPI() (addr string, cred string, err error) {
+	if err := s.Start(); err != nil {
+		return "", "", err
+	}
+
+	if s.localAPITCPListener == nil {
+		var cred [16]byte
+		if _, err := crand.Read(cred[:]); err != nil {
+			return "", "", err
+		}
+		s.localAPICred = hex.EncodeToString(cred[:])
+
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return "", "", err
+		}
+		s.localAPITCPListener = ln
+
+		go func() {
+			lah := localapi.NewHandler(s.lb, s.logf, s.logid)
+			lah.PermitWrite = true
+			lah.PermitRead = true
+			lah.RequiredPassword = s.localAPICred
+			h := &localSecHandler{h: lah, cred: s.localAPICred}
+
+			if err := http.Serve(s.localAPITCPListener, h); err != nil {
+				s.logf("localapi tcp serve error: %v", err)
+			}
+		}()
+	}
+
+	return s.localAPITCPListener.Addr().String(), s.localAPICred, nil
+}
+
+type localSecHandler struct {
+	h    http.Handler
+	cred string
+}
+
+func (h *localSecHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Sec-Tailscale") != "localapi" {
+		w.WriteHeader(403)
+		io.WriteString(w, "missing 'Sec-Tailscale: localapi' header")
+		return
+	}
+	h.h.ServeHTTP(w, r)
+}
+
 // Start connects the server to the tailnet.
 // Optional: any calls to Dial/Listen will also call Start.
 func (s *Server) Start() error {
@@ -170,8 +233,7 @@ func (s *Server) Up(ctx context.Context) (*ipnstate.Status, error) {
 			return nil, fmt.Errorf("tsnet.Up: backend: %s", *n.ErrMessage)
 		}
 		if s := n.State; s != nil {
-			switch *s {
-			case ipn.Running:
+			if *s == ipn.Running {
 				status, err := lc.Status(ctx)
 				if err != nil {
 					return nil, fmt.Errorf("tsnet.Up: %w", err)
@@ -180,15 +242,13 @@ func (s *Server) Up(ctx context.Context) (*ipnstate.Status, error) {
 					return nil, errors.New("tsnet.Up: running, but no ip")
 				}
 				return status, nil
-			case ipn.NeedsMachineAuth:
-				return nil, errors.New("tsnet.Up: tailnet requested machine auth")
 			}
-			// TODO: in the future, return an error on NeedsLogin
-			// to improve the UX of trying out the tsnet package.
+			// TODO: in the future, return an error on ipn.NeedsLogin
+			// and ipn.NeedsMachineAuth to improve the UX of trying
+			// out the tsnet package.
 			//
 			// Unfortunately today, even when using an AuthKey we
-			// briefly see a NeedsLogin state. It would be nice
-			// to fix that.
+			// briefly see these states. It would be nice to fix.
 		}
 	}
 }
@@ -239,6 +299,9 @@ func (s *Server) Close() error {
 	}
 	if s.localAPIListener != nil {
 		s.localAPIListener.Close()
+	}
+	if s.localAPITCPListener != nil {
+		s.localAPITCPListener.Close()
 	}
 
 	s.mu.Lock()
@@ -325,7 +388,7 @@ func (s *Server) start() (reterr error) {
 	if err := lpc.Validate(logtail.CollectionNode); err != nil {
 		return fmt.Errorf("logpolicy.Config.Validate for %v: %w", cfgPath, err)
 	}
-	logid := lpc.PublicID.String()
+	s.logid = lpc.PublicID.String()
 
 	s.logbuffer, err = filch.New(filepath.Join(s.rootPath, "tailscaled"), filch.Options{ReplaceStderr: false})
 	if err != nil {
@@ -399,7 +462,7 @@ func (s *Server) start() (reterr error) {
 	if s.Ephemeral {
 		loginFlags = controlclient.LoginEphemeral
 	}
-	lb, err := ipnlocal.NewLocalBackend(logf, logid, s.Store, s.dialer, eng, loginFlags)
+	lb, err := ipnlocal.NewLocalBackend(logf, s.logid, s.Store, s.dialer, eng, loginFlags)
 	if err != nil {
 		return fmt.Errorf("NewLocalBackend: %v", err)
 	}
@@ -435,7 +498,7 @@ func (s *Server) start() (reterr error) {
 	go s.printAuthURLLoop()
 
 	// Run the localapi handler, to allow fetching LetsEncrypt certs.
-	lah := localapi.NewHandler(lb, logf, logid)
+	lah := localapi.NewHandler(lb, logf, s.logid)
 	lah.PermitWrite = true
 	lah.PermitRead = true
 
