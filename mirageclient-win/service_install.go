@@ -1,4 +1,4 @@
-//go:build windows && go1.20
+//go:build windows
 
 package main
 

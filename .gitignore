@@ -7,6 +7,8 @@
 *.dylib
 *.spk
 
+*__debug_bin
+
 mirage
 miraged
 
