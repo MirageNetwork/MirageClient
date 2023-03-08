@@ -321,7 +321,7 @@ func (c *Client) connect(ctx context.Context, caller string) (client *derp.Clien
 		}
 		c.serverPubKey = derpClient.ServerPublicKey()
 		c.client = derpClient
-		c.netConn = tcpConn
+		c.netConn = conn
 		c.connGen++
 		return c.client, c.connGen, nil
 	case c.url != nil:
@@ -616,7 +616,7 @@ func (c *Client) dialNode(ctx context.Context, n *tailcfg.DERPNode) (net.Conn, e
 	ctx, cancel := context.WithTimeout(ctx, dialNodeTimeout)
 	defer cancel()
 
-	ctx = sockstats.WithSockStats(ctx, "derphttp.Client")
+	ctx = sockstats.WithSockStats(ctx, sockstats.LabelDERPHTTPClient)
 
 	nwait := 0
 	startDial := func(dstPrimary, proto string) {
