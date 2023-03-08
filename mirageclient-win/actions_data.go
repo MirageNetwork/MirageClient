@@ -26,8 +26,8 @@ func (s *MiraMenu) handleRx() {
 			switch newMsg.(type) {
 			case error: // 遇到通讯兵无法恢复严重错误崩溃，导致程序只能由用户选择重启动通讯员或者退出程序
 				go func(msg string) {
-					confirm := PopConfirmDlg("严重错误", "程序通讯报错:"+msg+" 无法执行，重试还是退出？", 300, 150)
-					if !confirm {
+					confirm := PopConfirmDlg("严重错误", "程序通讯报错:"+msg+" 无法执行，是否重试？", 300, 150)
+					if confirm {
 						go s.startWatch(s.ctx, s.lc)
 						return
 					} else {

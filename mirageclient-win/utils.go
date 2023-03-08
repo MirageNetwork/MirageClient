@@ -1,4 +1,5 @@
 //go:build windows
+
 package main
 
 import (
@@ -49,9 +50,11 @@ func (m *MiraMenu) ChangeIconDueRunState() {
 		})
 		go func(stateChanged <-chan struct{}) {
 			iconPtr := true
+			ticker := time.NewTicker(300 * time.Millisecond)
+			defer ticker.Stop()
 			for {
 				select {
-				case <-time.Tick(300 * time.Millisecond):
+				case <-ticker.C:
 					if iconPtr {
 						m.setIcon(Ing1)
 					} else {

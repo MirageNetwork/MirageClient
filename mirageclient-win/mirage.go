@@ -41,11 +41,8 @@ func main() {
 	flag.StringVar(&args.logid, "logid", "", "服务子进程使用的logtail ID值")
 	flag.Parse()
 
-	isService, err := svc.IsWindowsService()
-	if err != nil {
-		log.Printf("svc.IsWindowsService(): %v", err)
-		return
-	}
+	isService, _ := svc.IsWindowsService()
+
 	if args.asServiceInstaller || args.asServiceUninstaller || args.asFirewallKillswitch || args.asServiceSubProc || isService {
 		envknob.PanicIfAnyEnvCheckedInInit()
 		envknob.ApplyDiskConfig()
@@ -90,7 +87,7 @@ func main() {
 	}
 
 	// 客户端要保证单一进程
-	_, err = winutil.CreateAppMutex("MirageWin")
+	_, err := winutil.CreateAppMutex("MirageWin")
 	if err != nil {
 		return
 	}
