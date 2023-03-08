@@ -1,4 +1,5 @@
 //go:build windows
+
 package main
 
 import (
@@ -187,7 +188,7 @@ func (s *MiraMenu) Start() {
 			if confirm {
 				s.cancel()
 				s.ctx, s.cancel = context.WithCancel(context.Background())
-				go s.startWatch(s.ctx, s.lc)
+				//	go s.startWatch(s.ctx, s.lc)
 			} else {
 				os.Exit(-1)
 				return

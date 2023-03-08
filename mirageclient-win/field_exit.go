@@ -1,4 +1,5 @@
 //go:build windows
+
 package main
 
 import (
@@ -33,6 +34,9 @@ func (m *MiraMenu) newExitField() (ef *exitField, err error) {
 	ef.exitNodeListTitle.SetText("无可用出口节点")
 	ef.exitNodeListTitle.SetEnabled(false)
 	exitNodeListConatin, err := walk.NewMenu()
+	if err != nil {
+		return nil, err
+	}
 	ef.exitNodeList = walk.NewMenuAction(exitNodeListConatin).Menu().Actions()
 	ef.exitNodeIDMap = make(map[tailcfg.StableNodeID]int)
 

@@ -1,4 +1,5 @@
 //go:build windows
+
 package main
 
 import (
@@ -43,11 +44,11 @@ func (ico IconType) String() string {
 
 func (ico IconType) load() (*walk.Icon, error) {
 	file, err := iconDir.Open("logos/" + ico.String() + ".png")
-	defer file.Close()
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
+	defer file.Close()
 	iconImage, err := png.Decode(file)
 	if err != nil {
 		log.Fatal(err)
