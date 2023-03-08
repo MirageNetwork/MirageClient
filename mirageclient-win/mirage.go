@@ -42,6 +42,10 @@ func main() {
 	flag.Parse()
 
 	isService, err := svc.IsWindowsService()
+	if err != nil {
+		log.Printf("svc.IsWindowsService(): %v", err)
+		return
+	}
 	if args.asServiceInstaller || args.asServiceUninstaller || args.asFirewallKillswitch || args.asServiceSubProc || isService {
 		envknob.PanicIfAnyEnvCheckedInInit()
 		envknob.ApplyDiskConfig()

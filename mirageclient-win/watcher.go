@@ -48,11 +48,12 @@ func (w *MiraWatcher) Start(ctx context.Context, LC tailscale.LocalClient) error
 		}
 	}
 	// 之后试探状态
+break_for:
 	for !isServiceRunning() {
 		select {
 		case <-time.Tick(time.Second):
 		case <-time.After(time.Second * 30):
-			break
+			break break_for
 		}
 	}
 	if !isServiceRunning() {
