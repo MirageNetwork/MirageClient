@@ -176,6 +176,9 @@ func (m *MiraMenu) bindNetMapChange() {
 		tagNodeMenu := walk.NewMenuAction(tagNodeContain)
 		tagNodeMenu.SetText("标签节点")
 		peerNodeContain, err := walk.NewMenu()
+		if err != nil {
+			log.Printf("初始化标签节点菜单区错误：%s", err)
+		}
 		peerMenuList := peerNodeContain.Actions()
 		// 清理出口节点菜单区
 		for i := 0; i < m.exitField.exitNodeList.Len(); i++ {
