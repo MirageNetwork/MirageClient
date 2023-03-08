@@ -50,10 +50,13 @@ func (w *MiraWatcher) Start(ctx context.Context, LC tailscale.LocalClient) error
 		}
 	}
 	// 之后试探状态
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	after := time.After(time.Second * 30)
 	for !isServiceRunning() {
 		select {
-		case <-time.Tick(time.Second):
-		case <-time.After(time.Second * 30):
+		case <-ticker.C:
+		case <-after:
 			err := errors.New("后台服务未正常运行")
 			w.Tx <- err
 			return err

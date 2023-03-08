@@ -264,10 +264,13 @@ func isServiceInstaller() bool {
 		}
 	}
 	// 试探状态
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	after := time.After(time.Second * 20)
 	for !isServiceInstalled() {
 		select {
-		case <-time.Tick(time.Second):
-		case <-time.After(time.Second * 20):
+		case <-ticker.C:
+		case <-after:
 			log.Fatalf("服务未能安装")
 			return true
 		}
@@ -281,15 +284,18 @@ func isServiceInstaller() bool {
 		}
 	}
 	// 试探状态
+	ticker = time.NewTicker(time.Second * 10)
+	defer ticker.Stop()
+	after = time.After(time.Second * 60)
 	for !isServiceRunning() {
 		select {
-		case <-time.Tick(time.Second * 10):
+		case <-ticker.C:
 			err := startService()
 			if err != nil {
 				log.Fatalf("服务启动执行失败")
 				return true
 			}
-		case <-time.After(time.Second * 60):
+		case <-after:
 			log.Fatalf("服务未能启动")
 			return true
 		}
