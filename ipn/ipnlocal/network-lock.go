@@ -6,7 +6,9 @@ package ipnlocal
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -104,6 +106,7 @@ func (b *LocalBackend) tkaFilterNetmapLocked(nm *netmap.NetworkMap) {
 					ID:           p.ID,
 					StableID:     p.StableID,
 					TailscaleIPs: make([]netip.Addr, len(p.Addresses)),
+					NodeKey:      p.Key,
 				}
 				for i, addr := range p.Addresses {
 					if addr.IsSingleIP() && tsaddr.IsTailscaleIP(addr.Addr()) {
@@ -845,6 +848,40 @@ func (b *LocalBackend) NetworkLockAffectedSigs(keyID tkatype.KeyID) ([]tkatype.M
 	}
 
 	return resp.Signatures, nil
+}
+
+var tkaSuffixEncoder = base64.RawStdEncoding
+
+// NetworkLockWrapPreauthKey wraps a pre-auth key with information to
+// enable unattended bringup in the locked tailnet.
+//
+// The provided trusted tailnet-lock key is used to sign
+// a SigCredential structure, which is encoded along with the
+// private key and appended to the pre-auth key.
+func (b *LocalBackend) NetworkLockWrapPreauthKey(preauthKey string, tkaKey key.NLPrivate) (string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.tka == nil {
+		return "", errNetworkLockNotActive
+	}
+
+	pub, priv, err := ed25519.GenerateKey(nil) // nil == crypto/rand
+	if err != nil {
+		return "", err
+	}
+
+	sig := tka.NodeKeySignature{
+		SigKind:        tka.SigCredential,
+		KeyID:          tkaKey.KeyID(),
+		WrappingPubkey: pub,
+	}
+	sig.Signature, err = tkaKey.SignNKS(sig.SigHash())
+	if err != nil {
+		return "", fmt.Errorf("signing failed: %w", err)
+	}
+
+	b.logf("Generated network-lock credential signature using %s", tkaKey.Public().CLIString())
+	return fmt.Sprintf("%s--TL%s-%s", preauthKey, tkaSuffixEncoder.EncodeToString(sig.Serialize()), tkaSuffixEncoder.EncodeToString(priv)), nil
 }
 
 func signNodeKey(nodeInfo tailcfg.TKASignInfo, signer key.NLPrivate) (*tka.NodeKeySignature, error) {

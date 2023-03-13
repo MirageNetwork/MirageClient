@@ -150,6 +150,22 @@ type LocalBackend struct {
 	shutdownCalled        bool // if Shutdown has been called
 	debugSink             *capture.Sink
 
+	// getTCPHandlerForFunnelFlow returns a handler for an incoming TCP flow for
+	// the provided srcAddr and dstPort if one exists.
+	//
+	// srcAddr is the source address of the flow, not the address of the Funnel
+	// node relaying the flow.
+	// dstPort is the destination port of the flow.
+	//
+	// It returns nil if there is no known handler for this flow.
+	//
+	// This is specifically used to handle TCP flows for Funnel connections to tsnet
+	// servers.
+	//
+	// It is set once during initialization, and can be nil if SetTCPHandlerForFunnelFlow
+	// is never called.
+	getTCPHandlerForFunnelFlow func(srcAddr netip.AddrPort, dstPort uint16) (handler func(net.Conn))
+
 	// lastProfileID tracks the last profile we've seen from the ProfileManager.
 	// It's used to detect when the user has changed their profile.
 	lastProfileID ipn.ProfileID
@@ -2521,9 +2537,6 @@ func (b *LocalBackend) checkSSHPrefsLocked(p *ipn.Prefs) error {
 		if version.IsSandboxedMacOS() {
 			return errors.New("The Mirage SSH server does not run in sandboxed Mirage GUI builds.")
 		}
-		if !envknob.UseWIPCode() {
-			return errors.New("The Mirage SSH server is disabled on macOS miraged by default. To try, set env Mirage_USE_WIP_CODE=1")
-		}
 	case "freebsd", "openbsd":
 	default:
 		return errors.New("The Mirage SSH server is not supported on " + runtime.GOOS)
@@ -3116,6 +3129,12 @@ func dnsConfigForNetmap(nm *netmap.NetworkMap, prefs ipn.PrefsView, logf logger.
 	}
 
 	return dcfg
+}
+
+// SetTCPHandlerForFunnelFlow sets the TCP handler for Funnel flows.
+// It should only be called before the LocalBackend is used.
+func (b *LocalBackend) SetTCPHandlerForFunnelFlow(h func(src netip.AddrPort, dstPort uint16) (handler func(net.Conn))) {
+	b.getTCPHandlerForFunnelFlow = h
 }
 
 // SetVarRoot sets the root directory of Tailscale's writable
