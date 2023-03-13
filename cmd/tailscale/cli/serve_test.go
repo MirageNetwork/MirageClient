@@ -48,30 +48,6 @@ func TestCleanMountPoint(t *testing.T) {
 	}
 }
 
-func TestCheckHasAccess(t *testing.T) {
-	tests := []struct {
-		caps    []string
-		wantErr bool
-	}{
-		{[]string{}, true}, // No "funnel" attribute
-		{[]string{tailcfg.CapabilityWarnFunnelNoInvite}, true},
-		{[]string{tailcfg.CapabilityWarnFunnelNoHTTPS}, true},
-		{[]string{tailcfg.NodeAttrFunnel}, false},
-	}
-	for _, tt := range tests {
-		err := checkHasAccess(tt.caps)
-		switch {
-		case err != nil && tt.wantErr,
-			err == nil && !tt.wantErr:
-			continue
-		case tt.wantErr:
-			t.Fatalf("got no error, want error")
-		case !tt.wantErr:
-			t.Fatalf("got error %v, want no error", err)
-		}
-	}
-}
-
 func TestServeConfigMutations(t *testing.T) {
 	// Stateful mutations, starting from an empty config.
 	type step struct {
@@ -142,10 +118,6 @@ func TestServeConfigMutations(t *testing.T) {
 				}},
 			},
 		},
-	})
-	add(step{ // invalid port
-		command: cmd("--serve-port=9999 /abc proxy 3001"),
-		wantErr: anyErr(),
 	})
 	add(step{
 		command: cmd("--serve-port=8443 /abc proxy 3001"),
@@ -677,7 +649,7 @@ var fakeStatus = &ipnstate.Status{
 	BackendState: ipn.Running.String(),
 	Self: &ipnstate.PeerStatus{
 		DNSName:      "foo.test.ts.net",
-		Capabilities: []string{tailcfg.NodeAttrFunnel},
+		Capabilities: []string{tailcfg.NodeAttrFunnel, tailcfg.CapabilityFunnelPorts + "?ports=443,8443"},
 	},
 }
 

@@ -61,14 +61,14 @@ type Auto struct {
 
 	paused               bool // whether we should stop making HTTP requests
 	unpauseWaiters       []chan struct{}
-	loggedIn             bool       // true if currently logged in
-	loginGoal            *LoginGoal // non-nil if some login activity is desired
-	synced               bool       // true if our netmap is up-to-date
-	inPollNetMap         bool       // true if currently running a PollNetMap
-	inLiteMapUpdate      bool       // true if a lite (non-streaming) map request is outstanding
-	liteMapUpdateCancel  func()     // cancels a lite map update
-	liteMapUpdateCancels int        // how many times we've canceled a lite map update
-	inSendStatus         int        // number of sendStatus calls currently in progress
+	loggedIn             bool               // true if currently logged in
+	loginGoal            *LoginGoal         // non-nil if some login activity is desired
+	synced               bool               // true if our netmap is up-to-date
+	inPollNetMap         bool               // true if currently running a PollNetMap
+	inLiteMapUpdate      bool               // true if a lite (non-streaming) map request is outstanding
+	liteMapUpdateCancel  context.CancelFunc // cancels a lite map update, may be nil
+	liteMapUpdateCancels int                // how many times we've canceled a lite map update
+	inSendStatus         int                // number of sendStatus calls currently in progress
 	state                State
 
 	authCtx    context.Context // context used for auth requests
@@ -180,14 +180,15 @@ func (c *Auto) sendNewMapRequest() {
 
 	// If we are already in process of doing a LiteMapUpdate, cancel it and
 	// try a new one. If this is the 10th time we have done this
-	// cancelation, tear down everything and start again
+	// cancelation, tear down everything and start again.
+	const maxLiteMapUpdateAttempts = 10
 	if c.inLiteMapUpdate {
 		// Always cancel the in-flight lite map update, regardless of
 		// whether we cancel the streaming map request or not.
 		c.liteMapUpdateCancel()
 		c.inLiteMapUpdate = false
 
-		if c.liteMapUpdateCancels > 10 {
+		if c.liteMapUpdateCancels >= maxLiteMapUpdateAttempts {
 			// Not making progress
 			c.mu.Unlock()
 			c.cancelMapSafely()

@@ -761,12 +761,12 @@ func (h *peerAPIHandler) handleServeIngress(w http.ResponseWriter, r *http.Reque
 		bad("Tailscale-Ingress-Src header invalid; want ip:port")
 		return
 	}
-	target := r.Header.Get("Tailscale-Ingress-Target")
+	target := ipn.HostPort(r.Header.Get("Tailscale-Ingress-Target"))
 	if target == "" {
 		bad("Tailscale-Ingress-Target header not set")
 		return
 	}
-	if _, _, err := net.SplitHostPort(target); err != nil {
+	if _, _, err := net.SplitHostPort(string(target)); err != nil {
 		bad("Tailscale-Ingress-Target header invalid; want host:port")
 		return
 	}
@@ -779,13 +779,17 @@ func (h *peerAPIHandler) handleServeIngress(w http.ResponseWriter, r *http.Reque
 			return nil, false
 		}
 		io.WriteString(conn, "HTTP/1.1 101 Switching Protocols\r\n\r\n")
-		return conn, true
+		return &ipn.FunnelConn{
+			Conn:   conn,
+			Src:    srcAddr,
+			Target: target,
+		}, true
 	}
 	sendRST := func() {
 		http.Error(w, "denied", http.StatusForbidden)
 	}
 
-	h.ps.b.HandleIngressTCPConn(h.peerNode, ipn.HostPort(target), srcAddr, getConn, sendRST)
+	h.ps.b.HandleIngressTCPConn(h.peerNode, target, srcAddr, getConn, sendRST)
 }
 
 func (h *peerAPIHandler) handleServeInterfaces(w http.ResponseWriter, r *http.Request) {
@@ -861,7 +865,7 @@ func (h *peerAPIHandler) handleServeSockStats(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintln(w, "<!DOCTYPE html><h1>Socket Stats</h1>")
 
-	stats := sockstats.Get()
+	stats, validation := sockstats.GetWithValidation()
 	if stats == nil {
 		fmt.Fprintln(w, "No socket stats available")
 		return
@@ -876,6 +880,7 @@ func (h *peerAPIHandler) handleServeSockStats(w http.ResponseWriter, r *http.Req
 		fmt.Fprintf(w, "<th>Tx (%s)</th>", html.EscapeString(iface))
 		fmt.Fprintf(w, "<th>Rx (%s)</th>", html.EscapeString(iface))
 	}
+	fmt.Fprintln(w, "<th>Validation</th>")
 	fmt.Fprintln(w, "</thead>")
 
 	fmt.Fprintln(w, "<tbody>")
@@ -887,10 +892,10 @@ func (h *peerAPIHandler) handleServeSockStats(w http.ResponseWriter, r *http.Req
 		return a.String() < b.String()
 	})
 
-	txTotal := int64(0)
-	rxTotal := int64(0)
-	txTotalByInterface := map[string]int64{}
-	rxTotalByInterface := map[string]int64{}
+	txTotal := uint64(0)
+	rxTotal := uint64(0)
+	txTotalByInterface := map[string]uint64{}
+	rxTotalByInterface := map[string]uint64{}
 
 	for _, label := range labels {
 		stat := stats.Stats[label]
@@ -908,6 +913,17 @@ func (h *peerAPIHandler) handleServeSockStats(w http.ResponseWriter, r *http.Req
 			txTotalByInterface[iface] += stat.TxBytesByInterface[iface]
 			rxTotalByInterface[iface] += stat.RxBytesByInterface[iface]
 		}
+
+		if validationStat, ok := validation.Stats[label]; ok && (validationStat.RxBytes > 0 || validationStat.TxBytes > 0) {
+			fmt.Fprintf(w, "<td>Tx=%d (%+d) Rx=%d (%+d)</td>",
+				validationStat.TxBytes,
+				int64(validationStat.TxBytes)-int64(stat.TxBytes),
+				validationStat.RxBytes,
+				int64(validationStat.RxBytes)-int64(stat.RxBytes))
+		} else {
+			fmt.Fprintln(w, "<td></td>")
+		}
+
 		fmt.Fprintln(w, "</tr>")
 	}
 	fmt.Fprintln(w, "</tbody>")
@@ -920,6 +936,7 @@ func (h *peerAPIHandler) handleServeSockStats(w http.ResponseWriter, r *http.Req
 		fmt.Fprintf(w, "<th>%d</th>", txTotalByInterface[iface])
 		fmt.Fprintf(w, "<th>%d</th>", rxTotalByInterface[iface])
 	}
+	fmt.Fprintln(w, "<th></th>")
 	fmt.Fprintln(w, "</tfoot>")
 
 	fmt.Fprintln(w, "</table>")
