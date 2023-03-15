@@ -94,7 +94,8 @@ type CapabilityVersion int
 //   - 55: 2023-01-23: start of c2n GET+POST /update handler
 //   - 56: 2023-01-24: Client understands CapabilityDebugTSDNSResolution
 //   - 57: 2023-01-25: Client understands CapabilityBindToInterfaceByRoute
-const CurrentCapabilityVersion CapabilityVersion = 57
+//   - 58: 2023-03-10: Client retries lite map updates before restarting map poll.
+const CurrentCapabilityVersion CapabilityVersion = 58
 
 type StableID string
 
@@ -182,7 +183,12 @@ func (emptyStructJSONSlice) UnmarshalJSON([]byte) error { return nil }
 type Node struct {
 	ID       NodeID
 	StableID StableNodeID
-	Name     string // DNS
+
+	// Name is the FQDN of the node.
+	// It is also the MagicDNS name for the node.
+	// It has a trailing dot.
+	// e.g. "host.tail-scale.ts.net."
+	Name string
 
 	// User is the user who created the node. If ACL tags are in
 	// use for the node then it doesn't reflect the ACL identity
@@ -311,6 +317,11 @@ func (n *Node) DisplayNames(forOwner bool) (name, hostIfDifferent string) {
 		return n.ComputedName, n.computedHostIfDifferent
 	}
 	return n.ComputedName, ""
+}
+
+// IsTagged reports whether the node has any tags.
+func (n *Node) IsTagged() bool {
+	return len(n.Tags) > 0
 }
 
 // InitDisplayNames computes and populates n's display name
