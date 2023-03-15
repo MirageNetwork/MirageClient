@@ -263,6 +263,7 @@ func printFunnelStatus(ctx context.Context) {
 		}
 		printf("#     - %s\n", url)
 	}
+	outln()
 }
 
 // isRunningOrStarting reports whether st is in state Running or Starting.
