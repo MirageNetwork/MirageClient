@@ -35,6 +35,7 @@ import (
 	"tailscale.com/ipn/ipnlocal"
 	"tailscale.com/logtail/backoff"
 	"tailscale.com/net/tsaddr"
+	"tailscale.com/net/tsdial"
 	"tailscale.com/tailcfg"
 	"tailscale.com/tempfork/gliderlabs/ssh"
 	"tailscale.com/types/logger"
@@ -62,6 +63,7 @@ type ipnLocalBackend interface {
 	NetMap() *netmap.NetworkMap
 	WhoIs(ipp netip.AddrPort) (n *tailcfg.Node, u tailcfg.UserProfile, ok bool)
 	DoNoiseRequest(req *http.Request) (*http.Response, error)
+	Dialer() *tsdial.Dialer
 }
 
 type server struct {
@@ -76,9 +78,31 @@ type server struct {
 
 	// mu protects the following
 	mu                   sync.Mutex
+	httpc                *http.Client                // for calling out to peers.
 	activeConns          map[*conn]bool              // set; value is always true
 	fetchPublicKeysCache map[string]pubKeyCacheEntry // by https URL
 	shutdownCalled       bool
+}
+
+// sessionRecordingClient returns an http.Client that uses srv.lb.Dialer() to
+// dial connections. This is used to make requests to the session recording
+// server to upload session recordings.
+func (srv *server) sessionRecordingClient() *http.Client {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if srv.httpc != nil {
+		return srv.httpc
+	}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		return srv.lb.Dialer().UserDial(ctx, network, addr)
+	}
+	srv.httpc = &http.Client{
+		Transport: tr,
+	}
+	return srv.httpc
 }
 
 func (srv *server) now() time.Time {
@@ -1053,6 +1077,13 @@ func (ss *sshSession) run() {
 	err := ss.launchProcess()
 	if err != nil {
 		logf("start failed: %v", err.Error())
+		if errors.Is(err, context.Canceled) {
+			err := context.Cause(ss.ctx)
+			uve := userVisibleError{}
+			if errors.As(err, &uve) {
+				fmt.Fprintf(ss, "%s\r\n", uve)
+			}
+		}
 		ss.Exit(1)
 		return
 	}
@@ -1130,10 +1161,7 @@ func (ss *sshSession) recorders() []netip.AddrPort {
 }
 
 func (ss *sshSession) shouldRecord() bool {
-	// for now only record pty sessions
-	// TODO(bradfitz,maisem): support recording non-pty stuff too.
-	_, _, isPtyReq := ss.Pty()
-	return isPtyReq && len(ss.recorders()) > 0
+	return len(ss.recorders()) > 0
 }
 
 type sshConnInfo struct {
@@ -1315,6 +1343,56 @@ func randBytes(n int) []byte {
 	return b
 }
 
+// CastHeader is the header of an asciinema file.
+type CastHeader struct {
+	// Version is the asciinema file format version.
+	Version int `json:"version"`
+
+	// Width is the terminal width in characters.
+	// It is non-zero for Pty sessions.
+	Width int `json:"width"`
+
+	// Height is the terminal height in characters.
+	// It is non-zero for Pty sessions.
+	Height int `json:"height"`
+
+	// Timestamp is the unix timestamp of when the recording started.
+	Timestamp int64 `json:"timestamp"`
+
+	// Env is the environment variables of the session.
+	// Only "TERM" is set (2023-03-22).
+	Env map[string]string `json:"env"`
+
+	// Command is the command that was executed.
+	// Typically empty for shell sessions.
+	Command string `json:"command,omitempty"`
+
+	// Tailscale-specific fields:
+	// SrcNode is the FQDN of the node originating the connection.
+	// It is also the MagicDNS name for the node.
+	// It does not have a trailing dot.
+	// e.g. "host.tail-scale.ts.net"
+	SrcNode string `json:"srcNode"`
+
+	// SrcNodeID is the node ID of the node originating the connection.
+	SrcNodeID tailcfg.StableNodeID `json:"srcNodeID"`
+
+	// SrcNodeTags is the list of tags on the node originating the connection (if any).
+	SrcNodeTags []string `json:"srcNodeTags,omitempty"`
+
+	// SrcNodeUserID is the user ID of the node originating the connection (if not tagged).
+	SrcNodeUserID tailcfg.UserID `json:"srcNodeUserID,omitempty"` // if not tagged
+
+	// SrcNodeUser is the LoginName of the node originating the connection (if not tagged).
+	SrcNodeUser string `json:"srcNodeUser,omitempty"`
+
+	// SSHUser is the username as presented by the client.
+	SSHUser string `json:"sshUser"` // as presented by the client
+
+	// LocalUser is the effective username on the server.
+	LocalUser string `json:"localUser"`
+}
+
 // startNewRecording starts a new SSH session recording.
 func (ss *sshSession) startNewRecording() (_ *recording, err error) {
 	recorders := ss.recorders()
@@ -1343,55 +1421,57 @@ func (ss *sshSession) startNewRecording() (_ *recording, err error) {
 	}
 
 	pr, pw := io.Pipe()
-	req, err := http.NewRequestWithContext(ss.ctx, "POST", fmt.Sprintf("http://%s:%d/record", recorder.Addr(), recorder.Port()), pr)
+
+	// We want to use a background context for uploading and not ss.ctx.
+	// ss.ctx is closed when the session closes, but we don't want to break the upload at that time.
+	// Instead we want to wait for the session to close the writer when it finishes.
+	ctx := context.Background()
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("http://%s:%d/record", recorder.Addr(), recorder.Port()), pr)
 	if err != nil {
 		pr.Close()
 		pw.Close()
 		return nil, err
 	}
+	// We want to wait for the server to respond with 100 Continue to notifiy us
+	// that it's ready to receive data. We do this to block the session from
+	// starting until the server is ready to receive data.
+	// It also allows the server to reject the request before we start sending
+	// data.
+	req.Header.Set("Expect", "100-continue")
 	go func() {
 		defer pw.Close()
 		ss.logf("starting asciinema recording to %s", recorder)
-
-		// We just use the default client here, which has a 30s dial timeout.
-		resp, err := http.DefaultClient.Do(req)
+		hc := ss.conn.srv.sessionRecordingClient()
+		resp, err := hc.Do(req)
 		if err != nil {
-			ss.cancelCtx(err)
-			ss.logf("recording: error sending recording to %s: %v", recorder, err)
+			err := fmt.Errorf("recording: error sending recording: %w", err)
+			ss.logf("%v", err)
+			ss.cancelCtx(userVisibleError{
+				msg:   "recording: error sending recording",
+				error: err,
+			})
 			return
 		}
 		defer resp.Body.Close()
 		defer ss.cancelCtx(errors.New("recording: done"))
 		if resp.StatusCode != http.StatusOK {
-			ss.logf("recording: error sending recording to %s: %v", recorder, resp.Status)
+			err := fmt.Errorf("recording: server responded with %s", resp.Status)
+			ss.logf("%v", err)
+			ss.cancelCtx(userVisibleError{
+				msg:   "recording server responded with: " + resp.Status,
+				error: err,
+			})
 		}
 	}()
 
 	rec.out = pw
 
-	// {"version": 2, "width": 221, "height": 84, "timestamp": 1647146075, "env": {"SHELL": "/bin/bash", "TERM": "screen"}}
-	type CastHeader struct {
-		Version   int               `json:"version"`
-		Width     int               `json:"width"`
-		Height    int               `json:"height"`
-		Timestamp int64             `json:"timestamp"`
-		Env       map[string]string `json:"env"`
-
-		// Tailscale-specific fields:
-		SrcNode     string               `json:"srcNode"` // node FQDN
-		SrcNodeID   tailcfg.StableNodeID `json:"srcNodeID"`
-		SrcNodeTags []string             `json:"srcNodeTags"`
-		SSHUser     string               `json:"sshUser"` // as presented by the client
-		LocalUser   string               `json:"localUser"`
-
-		SrcNodeUserID tailcfg.UserID `json:"srcNodeUserID"` // if not tagged
-		SrcNodeUser   string         `json:"srcNodeUser"`
-	}
 	ch := CastHeader{
 		Version:   2,
 		Width:     w.Width,
 		Height:    w.Height,
 		Timestamp: now.Unix(),
+		Command:   strings.Join(ss.Command(), " "),
 		Env: map[string]string{
 			"TERM": term,
 			// TODO(bradfitz): anything else important?

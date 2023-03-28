@@ -48,6 +48,7 @@ import (
 	"tailscale.com/net/tsdial"
 	"tailscale.com/smallzstd"
 	"tailscale.com/types/logger"
+	"tailscale.com/types/logid"
 	"tailscale.com/types/nettype"
 	"tailscale.com/util/mak"
 	"tailscale.com/wgengine"
@@ -116,9 +117,10 @@ type Server struct {
 	loopbackListener net.Listener           // optional loopback for localapi and proxies
 	localAPIListener net.Listener           // in-memory, used by localClient
 	localClient      *tailscale.LocalClient // in-memory
+	localAPIServer   *http.Server
 	logbuffer        *filch.Filch
 	logtail          *logtail.Logger
-	logid            string
+	logid            logid.PublicID
 
 	mu        sync.Mutex
 	listeners map[listenKey]*listener
@@ -328,6 +330,13 @@ func (s *Server) Close() error {
 			s.logbuffer.Close()
 		}
 	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if s.localAPIServer != nil {
+			s.localAPIServer.Shutdown(ctx)
+		}
+	}()
 
 	if _, isMemStore := s.Store.(*mem.Store); isMemStore && s.Ephemeral && s.lb != nil {
 		wg.Add(1)
@@ -414,7 +423,10 @@ func (s *Server) getAuthKey() string {
 	if v := s.AuthKey; v != "" {
 		return v
 	}
-	return os.Getenv("TS_AUTHKEY")
+	if v := os.Getenv("TS_AUTHKEY"); v != "" {
+		return v
+	}
+	return os.Getenv("TS_AUTH_KEY")
 }
 
 func (s *Server) start() (reterr error) {
@@ -562,8 +574,9 @@ func (s *Server) start() (reterr error) {
 	lal := memnet.Listen("local-miraged.sock:80")
 	s.localAPIListener = lal
 	s.localClient = &tailscale.LocalClient{Dial: lal.Dial}
+	s.localAPIServer = &http.Server{Handler: lah}
 	go func() {
-		if err := http.Serve(lal, lah); err != nil {
+		if err := s.localAPIServer.Serve(lal); err != nil {
 			logf("localapi serve error: %v", err)
 		}
 	}()
@@ -573,7 +586,6 @@ func (s *Server) start() (reterr error) {
 
 func (s *Server) startLogger(closePool *closeOnErrorPool) error {
 	if inTest() {
-		s.logid = "test"
 		return nil
 	}
 	cfgPath := filepath.Join(s.rootPath, "tailscaled.log.conf")
@@ -590,7 +602,7 @@ func (s *Server) startLogger(closePool *closeOnErrorPool) error {
 	if err := lpc.Validate(logtail.CollectionNode); err != nil {
 		return fmt.Errorf("logpolicy.Config.Validate for %v: %w", cfgPath, err)
 	}
-	s.logid = lpc.PublicID.String()
+	s.logid = lpc.PublicID
 
 	s.logbuffer, err = filch.New(filepath.Join(s.rootPath, "tailscaled"), filch.Options{ReplaceStderr: false})
 	if err != nil {
