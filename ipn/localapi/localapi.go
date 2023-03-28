@@ -40,6 +40,7 @@ import (
 	"tailscale.com/tka"
 	"tailscale.com/types/key"
 	"tailscale.com/types/logger"
+	"tailscale.com/types/logid"
 	"tailscale.com/types/ptr"
 	"tailscale.com/util/clientmetric"
 	"tailscale.com/util/httpm"
@@ -130,7 +131,7 @@ var (
 	metrics   = map[string]*clientmetric.Metric{}
 )
 
-func NewHandler(b *ipnlocal.LocalBackend, logf logger.Logf, logID string) *Handler {
+func NewHandler(b *ipnlocal.LocalBackend, logf logger.Logf, logID logid.PublicID) *Handler {
 	return &Handler{b: b, logf: logf, backendLogID: logID}
 }
 
@@ -155,7 +156,7 @@ type Handler struct {
 
 	b            *ipnlocal.LocalBackend
 	logf         logger.Logf
-	backendLogID string
+	backendLogID logid.PublicID
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

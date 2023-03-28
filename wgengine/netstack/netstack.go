@@ -222,6 +222,7 @@ func Create(logf logger.Logf, tundev *tstun.Wrapper, e wgengine.Engine, mc *magi
 func (ns *Impl) Close() error {
 	ns.ctxCancel()
 	ns.ipstack.Close()
+	ns.ipstack.Wait()
 	return nil
 }
 
@@ -260,8 +261,8 @@ func (ns *Impl) Start(lb *ipnlocal.LocalBackend) error {
 	ns.ipstack.SetTransportProtocolHandler(tcp.ProtocolNumber, ns.wrapProtoHandler(tcpFwd.HandlePacket))
 	ns.ipstack.SetTransportProtocolHandler(udp.ProtocolNumber, ns.wrapProtoHandler(udpFwd.HandlePacket))
 	go ns.inject()
-	ns.tundev.PostFilterIn = ns.injectInbound
-	ns.tundev.PreFilterFromTunToNetstack = ns.handleLocalPackets
+	ns.tundev.PostFilterPacketInboundFromWireGaurd = ns.injectInbound
+	ns.tundev.PreFilterPacketOutboundToWireGuardNetstackIntercept = ns.handleLocalPackets
 	return nil
 }
 
