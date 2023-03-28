@@ -41,6 +41,7 @@ import (
 	"tailscale.com/smallzstd"
 	"tailscale.com/syncs"
 	"tailscale.com/types/logger"
+	"tailscale.com/types/logid"
 	"tailscale.com/util/multierr"
 	"tailscale.com/util/winutil"
 	"tailscale.com/version"
@@ -168,7 +169,7 @@ func beFirewallKillswitch() bool {
 }
 
 // 实际创建daemon IPN
-func StartDaemon(ctx context.Context, logf logger.Logf, logid string) error { // lbChn chan *ipnlocal.LocalBackend) {
+func StartDaemon(ctx context.Context, logf logger.Logf, logID string) error { // lbChn chan *ipnlocal.LocalBackend) {
 	ln, err := safesocket.Listen(socketPath)
 	if err != nil {
 		return fmt.Errorf("safesocket.Listen: %v", err)
@@ -190,7 +191,11 @@ func StartDaemon(ctx context.Context, logf logger.Logf, logid string) error { //
 		}
 	}()
 
-	srv := ipnserver.New(logf, logid)
+	logPubID, err := logid.ParsePublicID(logID)
+	if err != nil {
+		return fmt.Errorf("logid.ParsePublicID: %v", err)
+	}
+	srv := ipnserver.New(logf, logPubID)
 
 	// 先留调试接口
 	debugMux = http.NewServeMux()
@@ -205,7 +210,7 @@ func StartDaemon(ctx context.Context, logf logger.Logf, logid string) error { //
 
 	go func() {
 		t0 := time.Now()
-		lb, err := getLocalBackend(ctx, logf, logid)
+		lb, err := getLocalBackend(ctx, logf, logPubID)
 		if err == nil {
 			logf("got LocalBackend in %v", time.Since(t0).Round(time.Millisecond))
 			srv.SetLocalBackend(lb)
@@ -228,7 +233,7 @@ func StartDaemon(ctx context.Context, logf logger.Logf, logid string) error { //
 	return nil
 }
 
-func getLocalBackend(ctx context.Context, logf logger.Logf, logid string) (_ *ipnlocal.LocalBackend, retErr error) {
+func getLocalBackend(ctx context.Context, logf logger.Logf, logid logid.PublicID) (_ *ipnlocal.LocalBackend, retErr error) {
 	linkMon, err := monitor.New(logf)
 	if err != nil {
 		return nil, fmt.Errorf("monitor.New: %w", err)
