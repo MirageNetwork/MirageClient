@@ -114,10 +114,10 @@ func (m *MiraMenu) ShowAbout() {
 		msg += " (" + strings.TrimPrefix(m.data.Version, strings.Split(m.data.Version, "-")[0]+"-") + ")"
 	}
 	if m.data.ClientVersion != nil {
-		if m.data.ClientVersion.RunningLatest {
+		if m.data.ClientVersion.LatestVersion == m.data.Version {
 			msg += "\n已是最新版本"
-		} else if m.data.ClientVersion.Notify {
-			msg += "\n有更新版本：" + m.data.ClientVersion.LatestVersion + "\n是否去更新？"
+		} else if m.data.ClientVersion.LatestVersion != "" {
+			msg += "\n官方最新版本：" + m.data.ClientVersion.LatestVersion + "\n是否下载？"
 			msgid := walk.MsgBox(m.mw, "关于蜃境", msg, walk.MsgBoxIconInformation|walk.MsgBoxOKCancel)
 			if msgid == 1 {
 				OpenURLInBrowser(m.data.ClientVersion.NotifyURL)

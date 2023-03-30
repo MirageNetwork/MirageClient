@@ -1,4 +1,5 @@
 //go:build windows
+
 package main
 
 import (
@@ -48,6 +49,10 @@ func (pool *DataPool) SetAuthKey(newV string) {
 	pool.AuthKey = newV
 
 }
+func (pool *DataPool) SetClientVersion(newV *tailcfg.ClientVersion) {
+	pool.ClientVersion = newV
+}
+
 func (pool *DataPool) SetVersion(newV string) {
 	if pool.Version == newV {
 		return

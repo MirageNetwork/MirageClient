@@ -39,6 +39,8 @@ func (s *MiraMenu) handleRx() {
 				s.data.SetState(newMsg.(ipn.State).String())
 			case BackendVersion:
 				s.data.SetVersion(string(newMsg.(BackendVersion)))
+			case *tailcfg.ClientVersion:
+				s.data.SetClientVersion(newMsg.(*tailcfg.ClientVersion))
 			case *ipn.Prefs:
 				s.data.SetPrefs(newMsg.(*ipn.Prefs))
 			case *netmap.NetworkMap:

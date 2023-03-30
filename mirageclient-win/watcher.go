@@ -114,6 +114,10 @@ func (w *MiraWatcher) WatchDaemon(ctx context.Context, LC tailscale.LocalClient)
 			log.Printf("[通讯兵] 收到版本号: %s", v)
 			w.Tx <- BackendVersion(v)
 		}
+		if cliV := n.ClientVersion; cliV != nil {
+			log.Printf("[通讯兵] 收到客户端版本号: %v", cliV)
+			w.Tx <- cliV
+		}
 
 		if nm := n.NetMap; nm != nil {
 			log.Printf("[通讯兵] 收到网络图: %s", nm)
