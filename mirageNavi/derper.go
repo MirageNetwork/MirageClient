@@ -44,7 +44,6 @@ import (
 )
 
 var (
-	regionID    = flag.Int("region", 0, "region ID")
 	ctrlURL     = flag.String("ctrl-url", "", "URL of contoller server to use")
 	derpID      = flag.String("id", "", "DERP server ID")
 	dnsProvider = flag.String("dns-provider", "cloudflare", "DNS provider to use for DNS-01 challenges")
@@ -100,7 +99,6 @@ func init() {
 
 type config struct {
 	CtrlURL    string
-	RegionID   int
 	DERPID     string
 	NaviKey    key.MachinePrivate
 	PrivateKey key.NodePrivate
@@ -124,10 +122,7 @@ func loadConfig() config {
 		if *derpID == "" {
 			log.Fatalf("derper: -id not specified")
 		}
-		if *regionID == 0 {
-			log.Fatalf("derper: -region not specified")
-		}
-		return writeNewConfig(*ctrlURL, *derpID, *regionID)
+		return writeNewConfig(*ctrlURL, *derpID)
 	case err != nil:
 		log.Fatal(err)
 		panic("unreachable")
@@ -140,7 +135,7 @@ func loadConfig() config {
 	}
 }
 
-func writeNewConfig(ctrlURL, derpID string, regionID int) config {
+func writeNewConfig(ctrlURL, derpID string) config {
 	k := key.NewNode()
 	mk := key.NewMachine()
 	if err := os.MkdirAll(filepath.Dir(*configPath), 0777); err != nil {
@@ -148,7 +143,6 @@ func writeNewConfig(ctrlURL, derpID string, regionID int) config {
 	}
 	cfg := config{
 		CtrlURL:    ctrlURL,
-		RegionID:   regionID,
 		DERPID:     derpID,
 		NaviKey:    mk,
 		PrivateKey: k,
@@ -181,7 +175,7 @@ func main() {
 
 	//	serveTLS := tsweb.IsProd443(*addr) || *certMode == "manual"
 
-	s := derp.NewServer(cfg.CtrlURL, cfg.DERPID, cfg.RegionID, cfg.NaviKey, cfg.PrivateKey, log.Printf)
+	s := derp.NewServer(cfg.CtrlURL, cfg.DERPID, cfg.NaviKey, cfg.PrivateKey, log.Printf)
 	s.SetVerifyClient(*verifyClients)
 
 	if *meshPSKFile != "" {

@@ -102,7 +102,6 @@ type Server struct {
 	httpc  *http.Client               // 用于和控制器进行请求
 	nc     *controlclient.NoiseClient // 用于和控制器进行请求
 
-	regionID   int                // 区域ID（受限于数据库结构，需要用这个进行查找）
 	derpID     string             // 自身的ID序列
 	naviPriKey key.MachinePrivate // 用于和控制器进行请求
 	naviPubKey key.MachinePublic  // 用于和控制器进行请求
@@ -311,14 +310,13 @@ type Conn interface {
 
 // NewServer returns a new DERP server. It doesn't listen on its own.
 // Connections are given to it via Server.Accept.
-func NewServer(url, id string, regionID int, naviKey key.MachinePrivate, privateKey key.NodePrivate, logf logger.Logf) *Server {
+func NewServer(url, id string, naviKey key.MachinePrivate, privateKey key.NodePrivate, logf logger.Logf) *Server {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 
 	s := &Server{
 		ctx:        context.Background(),
 		ctrlURL:    url,
-		regionID:   regionID,
 		derpID:     id,
 		naviPriKey: naviKey,
 		naviPubKey: naviKey.Public(),

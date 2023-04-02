@@ -115,13 +115,11 @@ func decode(res *http.Response, v any) error {
 }
 
 type RegisterRequest struct {
-	RegionID  int
 	ID        string
 	Timestamp *time.Time
 }
 
 type RegisterResponse struct {
-	RegionID  int
 	ID        string
 	Timestamp *time.Time
 }
@@ -129,7 +127,6 @@ type RegisterResponse struct {
 func (s *Server) registerNaviToCtrl() error {
 	now := time.Now().Round(time.Second)
 	request := RegisterRequest{
-		RegionID:  s.regionID,
 		ID:        s.derpID,
 		Timestamp: &now,
 	}

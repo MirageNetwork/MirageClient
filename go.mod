@@ -42,6 +42,7 @@ require (
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.15.4
 	github.com/kortschak/wol v0.0.0-20200729010619-da482cc4850a
+	github.com/libdns/libdns v0.2.1
 	github.com/mattn/go-colorable v0.1.12
 	github.com/mattn/go-isatty v0.0.14
 	github.com/mdlayher/genetlink v1.2.0
@@ -98,7 +99,6 @@ require (
 
 require (
 	github.com/klauspost/cpuid/v2 v2.1.1 // indirect
-	github.com/libdns/libdns v0.2.1 // indirect
 	github.com/mholt/acmez v1.0.4 // indirect
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.597 // indirect
 )
