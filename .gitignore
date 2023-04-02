@@ -6,6 +6,7 @@
 *.so
 *.dylib
 *.spk
+__debug_bin
 
 cmd/tailscale/tailscale
 cmd/tailscaled/tailscaled

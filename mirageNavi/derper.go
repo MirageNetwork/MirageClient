@@ -33,6 +33,7 @@ import (
 	"github.com/libdns/tencentcloud"
 	"go4.org/mem"
 	"golang.org/x/time/rate"
+	"k8s.io/client-go/util/homedir"
 	"tailscale.com/atomicfile"
 	"tailscale.com/derp"
 	"tailscale.com/derp/derphttp"
@@ -110,18 +111,15 @@ func loadConfig() config {
 		return config{PrivateKey: key.NewNode()}
 	}
 	if *configPath == "" {
-		if os.Getuid() == 0 {
-			*configPath = "/var/lib/derper/derper.key"
-		} else {
-			log.Fatalf("derper: -c <config path> not specified")
-		}
+		dir := homedir.HomeDir()
+		*configPath = filepath.Join(dir, ".mirage", "navi.store")
 		log.Printf("no config path specified; using %s", *configPath)
 	}
 	b, err := os.ReadFile(*configPath)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		if *ctrlURL == "" {
-			log.Fatalf("derper: -ctrl-url not specified")
+			log.Fatalf("navi: -ctrl-url not specified")
 		}
 		if *derpID == "" {
 			log.Fatalf("derper: -id not specified")
@@ -274,12 +272,10 @@ func main() {
 
 	//cgao6: 从这里开始，我们按照自己的需要实现只能HTTPS访问（支持TLS挑战、DNS挑战、手动证书）
 	//cgao6: 感谢Caddy
-	if *certMode == "dns" { // DNS challenge
-
-	}
 	var tlsConfig *tls.Config
 	switch *certMode {
 	case "alpn", "dns": // ALPN challenge
+		certmagic.Default.Storage = &certmagic.FileStorage{Path: filepath.Join(homedir.HomeDir(), ".mirage", "certs")}
 		cache := certmagic.NewCache(certmagic.CacheOptions{
 			GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
 				return &certmagic.Config{}, nil
