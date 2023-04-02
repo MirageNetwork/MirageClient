@@ -47,7 +47,7 @@ require (
 	github.com/mdlayher/genetlink v1.2.0
 	github.com/mdlayher/netlink v1.7.1
 	github.com/mdlayher/sdnotify v1.0.0
-	github.com/miekg/dns v1.1.43
+	github.com/miekg/dns v1.1.50
 	github.com/mitchellh/go-ps v1.0.0
 	github.com/peterbourgon/ff/v3 v3.1.2
 	github.com/pkg/errors v0.9.1
@@ -67,7 +67,7 @@ require (
 	github.com/toqueteos/webbrowser v1.2.0
 	github.com/u-root/u-root v0.9.1-0.20230109201855-948a78c969ad
 	github.com/vishvananda/netlink v1.1.1-0.20211118161826-650dca95af54
-	go.uber.org/zap v1.21.0
+	go.uber.org/zap v1.23.0
 	go4.org/mem v0.0.0-20210711025021-927187094b94
 	go4.org/netipx v0.0.0-20220725152314-7e7bdc8411bf
 	golang.org/x/crypto v0.6.0
@@ -94,6 +94,13 @@ require (
 	sigs.k8s.io/controller-runtime v0.13.1
 	sigs.k8s.io/yaml v1.3.0
 	software.sslmate.com/src/go-pkcs12 v0.2.0
+)
+
+require (
+	github.com/klauspost/cpuid/v2 v2.1.1 // indirect
+	github.com/libdns/libdns v0.2.1 // indirect
+	github.com/mholt/acmez v1.0.4 // indirect
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.597 // indirect
 )
 
 require (
@@ -134,6 +141,7 @@ require (
 	github.com/bombsimon/wsl/v3 v3.3.0 // indirect
 	github.com/breml/bidichk v0.2.1 // indirect
 	github.com/butuzov/ireturn v0.1.1 // indirect
+	github.com/caddyserver/certmagic v0.17.2
 	github.com/cavaliercoder/go-cpio v0.0.0-20180626203310-925f9528c45e // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/charithe/durationcheck v0.0.9 // indirect
@@ -225,6 +233,10 @@ require (
 	github.com/kyoh86/exportloopref v0.1.8 // indirect
 	github.com/ldez/gomoddirectives v0.2.2 // indirect
 	github.com/ldez/tagliatelle v0.2.0 // indirect
+	github.com/libdns/alidns v1.0.2
+	github.com/libdns/cloudflare v0.1.0
+	github.com/libdns/namesilo v0.1.0
+	github.com/libdns/tencentcloud v1.0.0
 	github.com/magiconair/properties v1.8.5 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/maratori/testpackage v1.0.1 // indirect

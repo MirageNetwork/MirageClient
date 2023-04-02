@@ -35,9 +35,11 @@ import (
 	"go4.org/mem"
 	"golang.org/x/sync/errgroup"
 	"tailscale.com/client/tailscale"
+	"tailscale.com/control/controlclient"
 	"tailscale.com/disco"
 	"tailscale.com/envknob"
 	"tailscale.com/metrics"
+	"tailscale.com/net/tsdial"
 	"tailscale.com/syncs"
 	"tailscale.com/tstime/rate"
 	"tailscale.com/types/key"
@@ -92,6 +94,19 @@ type align64 [0]atomic.Int64 // for side effect of its 64-bit alignment
 
 // Server is a DERP server.
 type Server struct {
+	ctrlURL      string            // 控制器地址
+	ctrlNoiseKey key.MachinePublic // 用于和控制器进行请求
+
+	ctx    context.Context            // 未知哪里用得到，先留着
+	dialer *tsdial.Dialer             // 用于和控制器进行请求
+	httpc  *http.Client               // 用于和控制器进行请求
+	nc     *controlclient.NoiseClient // 用于和控制器进行请求
+
+	regionID   int                // 区域ID（受限于数据库结构，需要用这个进行查找）
+	derpID     string             // 自身的ID序列
+	naviPriKey key.MachinePrivate // 用于和控制器进行请求
+	naviPubKey key.MachinePublic  // 用于和控制器进行请求
+
 	// WriteTimeout, if non-zero, specifies how long to wait
 	// before failing when writing to a client.
 	WriteTimeout time.Duration
@@ -296,11 +311,18 @@ type Conn interface {
 
 // NewServer returns a new DERP server. It doesn't listen on its own.
 // Connections are given to it via Server.Accept.
-func NewServer(privateKey key.NodePrivate, logf logger.Logf) *Server {
+func NewServer(url, id string, regionID int, naviKey key.MachinePrivate, privateKey key.NodePrivate, logf logger.Logf) *Server {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 
 	s := &Server{
+		ctx:        context.Background(),
+		ctrlURL:    url,
+		regionID:   regionID,
+		derpID:     id,
+		naviPriKey: naviKey,
+		naviPubKey: naviKey.Public(),
+
 		debug:                envknob.Bool("DERP_DEBUG_LOGS"),
 		privateKey:           privateKey,
 		publicKey:            privateKey.Public(),
@@ -319,6 +341,29 @@ func NewServer(privateKey key.NodePrivate, logf logger.Logf) *Server {
 		tcpRtt:               metrics.LabelMap{Label: "le"},
 		keyOfAddr:            map[netip.AddrPort]key.NodePublic{},
 	}
+
+	// cgao6: 初始化客户端及获取控制器公钥
+	s.httpc = s.createHttpc()
+	keys, err := s.loadServerPubKeys()
+	if err != nil {
+		log.Fatal(err) //TODO: cgao6: 是否会遇到获取失败且需要处理的情形
+	}
+	logf("control server key from %s: ts2021=%s, legacy=%v", url, keys.PublicKey.ShortString(), keys.LegacyPublicKey.ShortString())
+	s.ctrlNoiseKey = keys.PublicKey
+	if !s.ctrlNoiseKey.IsZero() {
+		s.httpc.CloseIdleConnections()
+	}
+	s.nc, err = s.getNoiseClient()
+	if err != nil {
+		log.Fatal(err) //TODO: cgao6: 是否会遇到获取失败且需要处理的情形
+	}
+	err = s.registerNaviToCtrl()
+	if err != nil {
+		log.Fatal(err) //TODO: cgao6: 是否会遇到获取失败且需要处理的情形
+	}
+
+	//cgao6: 修改至此
+
 	s.initMetacert()
 	s.packetsRecvDisco = s.packetsRecvByKind.Get("disco")
 	s.packetsRecvOther = s.packetsRecvByKind.Get("other")
@@ -1094,10 +1139,12 @@ func (c *sclient) requestMeshUpdate() {
 	}
 }
 
+// TODO: cgao6 - 我们这里让DERP直接跟控制器进行noise协议会话查询
 func (s *Server) verifyClient(clientKey key.NodePublic, info *clientInfo) error {
 	if !s.verifyClients {
 		return nil
 	}
+
 	status, err := tailscale.Status(context.TODO())
 	if err != nil {
 		return fmt.Errorf("failed to query local tailscaled status: %w", err)
