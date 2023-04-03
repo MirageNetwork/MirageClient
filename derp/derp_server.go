@@ -32,6 +32,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/patrickmn/go-cache"
+	"github.com/robfig/cron/v3"
 	"go4.org/mem"
 	"golang.org/x/sync/errgroup"
 	"tailscale.com/client/tailscale"
@@ -105,6 +107,9 @@ type Server struct {
 	derpID     string             // 自身的ID序列
 	naviPriKey key.MachinePrivate // 用于和控制器进行请求
 	naviPubKey key.MachinePublic  // 用于和控制器进行请求
+
+	trustNodesCache *cache.Cache // 用于存储受信客户端信息
+	Cronjob         *cron.Cron   // 用于定时从控制器拉取受信客户端信息
 
 	// WriteTimeout, if non-zero, specifies how long to wait
 	// before failing when writing to a client.
@@ -323,6 +328,9 @@ func NewServer(url, id string, naviKey key.MachinePrivate, privateKey key.NodePr
 		derpID:     id,
 		naviPriKey: naviKey,
 		naviPubKey: naviKey.Public(),
+
+		trustNodesCache: cache.New(0, 0),
+		Cronjob:         cron.New(),
 
 		debug:                envknob.Bool("DERP_DEBUG_LOGS"),
 		privateKey:           privateKey,
@@ -1163,16 +1171,21 @@ func (s *Server) verifyClient(clientKey key.NodePublic, info *clientInfo) error 
 	if !s.verifyClients {
 		return nil
 	}
-
-	status, err := tailscale.Status(context.TODO())
-	if err != nil {
-		return fmt.Errorf("failed to query local tailscaled status: %w", err)
-	}
-	if clientKey == status.Self.PublicKey {
-		return nil
-	}
-	if _, exists := status.Peer[clientKey]; !exists {
-		return fmt.Errorf("client %v not in set of peers", clientKey)
+	if s.ctrlURL == "" || s.derpID == "" { // 未受管，采用和TS同样验证方式
+		status, err := tailscale.Status(context.TODO())
+		if err != nil {
+			return fmt.Errorf("failed to query local tailscaled status: %w", err)
+		}
+		if clientKey == status.Self.PublicKey {
+			return nil
+		}
+		if _, exists := status.Peer[clientKey]; !exists {
+			return fmt.Errorf("client %v not in set of peers", clientKey)
+		}
+	} else { // 受管，采用控制器验证
+		if _, ok := s.trustNodesCache.Get(clientKey.String()); !ok {
+			return fmt.Errorf("client %v not acceptable due to ctrl server", clientKey)
+		}
 	}
 	// TODO(bradfitz): add policy for configurable bandwidth rate per client?
 	return nil

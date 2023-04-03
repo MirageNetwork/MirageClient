@@ -121,12 +121,6 @@ func loadConfig() config {
 	b, err := os.ReadFile(*configPath)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		if *ctrlURL == "" {
-			log.Fatalf("navi: -ctrl-url not specified")
-		}
-		if *derpID == "" {
-			log.Fatalf("derper: -id not specified")
-		}
 		return writeNewConfig(*ctrlURL, *derpID)
 	case err != nil:
 		log.Fatal(err)
@@ -184,6 +178,15 @@ func main() {
 		hostname, addr, stunPort, runDERP, runSTUN,
 		setIPv4, setIPv6, dnsProvider, dnsID, dnsKey,
 		log.Printf)
+
+	if *ctrlURL != "" && *derpID != "" {
+		*verifyClients = true
+		s.Cronjob.AddFunc("@every 2m", func() {
+			s.PullNodesList()
+		})
+		s.Cronjob.Start()
+		defer s.Cronjob.Stop()
+	}
 	s.SetVerifyClient(*verifyClients)
 
 	if *meshPSKFile != "" {

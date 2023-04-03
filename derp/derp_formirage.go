@@ -177,3 +177,51 @@ func (s *Server) registerNaviToCtrl() (NaviNode, error) {
 	//TODO: 完成注册流程
 	return resp.NodeInfo, nil
 }
+
+type PullNodesListResponse struct {
+	TrustNodesList map[string]string `json:"TrustNodesList"`
+	Timestamp      *time.Time        `json:"Timestamp"`
+}
+
+func (s *Server) PullNodesList() error {
+	now := time.Now().Round(time.Second)
+	request := RegisterRequest{
+		ID:        s.derpID,
+		Timestamp: &now,
+	}
+	url := fmt.Sprintf("%s/navi/map", s.ctrlURL)
+	url = strings.Replace(url, "http:", "https:", 1)
+	bodyData, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("map request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(s.ctx, "POST", url, bytes.NewReader(bodyData))
+	if err != nil {
+		return fmt.Errorf("map request: %w", err)
+	}
+	res, err := s.nc.Do(req)
+	if err != nil {
+		return fmt.Errorf("map request: %w", err)
+	}
+	if res.StatusCode != 200 {
+		msg, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		return fmt.Errorf("map request: http %d: %.200s",
+			res.StatusCode, strings.TrimSpace(string(msg)))
+	}
+
+	resp := PullNodesListResponse{}
+	if err := decode(res, &resp); err != nil {
+		s.logf("error decoding TrustNodeList with server key %s and machine key %s: %v", s.ctrlNoiseKey, s.naviPubKey, err)
+		return fmt.Errorf("map request: %v", err)
+	}
+	s.logf("map response: %v", resp)
+
+	expire := time.Now().Add(10 * time.Minute)
+	s.trustNodesCache.Flush()
+	for nkey := range resp.TrustNodesList {
+		s.trustNodesCache.Set(nkey, struct{}{}, expire.Sub(time.Now()))
+	}
+
+	return nil
+}
