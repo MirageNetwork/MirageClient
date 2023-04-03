@@ -310,7 +310,10 @@ type Conn interface {
 
 // NewServer returns a new DERP server. It doesn't listen on its own.
 // Connections are given to it via Server.Accept.
-func NewServer(url, id string, naviKey key.MachinePrivate, privateKey key.NodePrivate, logf logger.Logf) *Server {
+func NewServer(url, id string, naviKey key.MachinePrivate, privateKey key.NodePrivate,
+	hostname, addr *string, stunPort *int, runDERP, runSTUN *bool,
+	setIPv4, setIPv6, dnsProvider, dnsID, dnsKey *string,
+	logf logger.Logf) *Server {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 
@@ -340,26 +343,44 @@ func NewServer(url, id string, naviKey key.MachinePrivate, privateKey key.NodePr
 		keyOfAddr:            map[netip.AddrPort]key.NodePublic{},
 	}
 
-	// cgao6: 初始化客户端及获取控制器公钥
-	s.httpc = s.createHttpc()
-	keys, err := s.loadServerPubKeys()
-	if err != nil {
-		log.Fatal(err) //TODO: cgao6: 是否会遇到获取失败且需要处理的情形
-	}
-	logf("control server key from %s: ts2021=%s, legacy=%v", url, keys.PublicKey.ShortString(), keys.LegacyPublicKey.ShortString())
-	s.ctrlNoiseKey = keys.PublicKey
-	if !s.ctrlNoiseKey.IsZero() {
-		s.httpc.CloseIdleConnections()
-	}
-	s.nc, err = s.getNoiseClient()
-	if err != nil {
-		log.Fatal(err) //TODO: cgao6: 是否会遇到获取失败且需要处理的情形
-	}
-	err = s.registerNaviToCtrl()
-	if err != nil {
-		log.Fatal(err) //TODO: cgao6: 是否会遇到获取失败且需要处理的情形
-	}
+	if url != "" && id != "" { // 受管模式
+		// cgao6: 初始化客户端及获取控制器公钥
+		s.httpc = s.createHttpc()
+		keys, err := s.loadServerPubKeys()
+		if err != nil {
+			log.Fatal(err) //TODO: cgao6: 是否会遇到获取失败且需要处理的情形
+		}
+		logf("control server key from %s: ts2021=%s, legacy=%v", url, keys.PublicKey.ShortString(), keys.LegacyPublicKey.ShortString())
+		s.ctrlNoiseKey = keys.PublicKey
+		if !s.ctrlNoiseKey.IsZero() {
+			s.httpc.CloseIdleConnections()
+		}
+		s.nc, err = s.getNoiseClient()
+		if err != nil {
+			log.Fatal(err) //TODO: cgao6: 是否会遇到获取失败且需要处理的情形
+		}
+		naviInfo, err := s.registerNaviToCtrl()
+		if err != nil {
+			log.Fatal(err) //TODO: cgao6: 是否会遇到获取失败且需要处理的情形
+		}
 
+		*hostname = naviInfo.HostName
+		if !naviInfo.NoDERP {
+			*addr = ":" + strconv.Itoa(naviInfo.DERPPort)
+		} else {
+			*runDERP = false
+		}
+		if !naviInfo.NoSTUN {
+			*stunPort = naviInfo.STUNPort
+		} else {
+			*runSTUN = false
+		}
+		*setIPv4 = naviInfo.IPv4
+		*setIPv6 = naviInfo.IPv6
+		*dnsProvider = naviInfo.DNSProvider
+		*dnsID = naviInfo.DNSID
+		*dnsKey = naviInfo.DNSKey
+	}
 	//cgao6: 修改至此
 
 	s.initMetacert()

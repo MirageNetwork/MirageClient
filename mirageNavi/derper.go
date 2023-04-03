@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -46,7 +47,7 @@ import (
 var (
 	ctrlURL     = flag.String("ctrl-url", "", "URL of contoller server to use")
 	derpID      = flag.String("id", "", "DERP server ID")
-	dnsProvider = flag.String("dns-provider", "cloudflare", "DNS provider to use for DNS-01 challenges")
+	dnsProvider = flag.String("dns-provider", "", "DNS provider to use for DNS-01 challenges")
 	dnsID       = flag.String("dns-id", "", "Ali provider required id")
 	dnsKey      = flag.String("dns-key", "", "Ali provider required key")
 	setIPv4     = flag.String("set-ipv4", "", "set IPv4 address")
@@ -54,10 +55,10 @@ var (
 
 	dev        = flag.Bool("dev", false, "run in localhost development mode")
 	addr       = flag.String("a", ":443", "server HTTPS listen address, in form \":port\", \"ip:port\", or for IPv6 \"[ip]:port\". If the IP is omitted, it defaults to all interfaces.")
-	httpPort   = flag.Int("http-port", 80, "The port on which to serve HTTP. Set to -1 to disable. The listener is bound to the same IP (if any) as specified in the -a flag.")
+	httpPort   = flag.Int("http-port", -1, "The port on which to serve HTTP. Set to -1 to disable. The listener is bound to the same IP (if any) as specified in the -a flag.")
 	stunPort   = flag.Int("stun-port", 3478, "The UDP port on which to serve STUN. The listener is bound to the same IP (if any) as specified in the -a flag.")
 	configPath = flag.String("c", "", "config file path")
-	certMode   = flag.String("certmode", "alpn", "mode for getting a cert. possible options: alpn, dns, manual")
+	certMode   = flag.String("certmode", "letsencrypt", "mode for getting a cert. possible options: letsencrypt, manual")
 	certDir    = flag.String("certdir", tsweb.DefaultCertDir("derper-certs"), "directory to store LetsEncrypt certs, if addr's port is :443")
 	hostname   = flag.String("hostname", "derp.tailscale.com", "LetsEncrypt host name, if addr's port is :443")
 	runSTUN    = flag.Bool("stun", true, "whether to run a STUN server. It will bind to the same IP (if any) as the --addr flag value.")
@@ -110,7 +111,11 @@ func loadConfig() config {
 	}
 	if *configPath == "" {
 		dir := homedir.HomeDir()
-		*configPath = filepath.Join(dir, ".mirage", "navi.store")
+		if *derpID == "" {
+			*configPath = filepath.Join(dir, ".mirage", "navi.store")
+		} else {
+			*configPath = filepath.Join(dir, ".mirage", "navi-"+*derpID+".store")
+		}
 		log.Printf("no config path specified; using %s", *configPath)
 	}
 	b, err := os.ReadFile(*configPath)
@@ -175,7 +180,10 @@ func main() {
 
 	//	serveTLS := tsweb.IsProd443(*addr) || *certMode == "manual"
 
-	s := derp.NewServer(cfg.CtrlURL, cfg.DERPID, cfg.NaviKey, cfg.PrivateKey, log.Printf)
+	s := derp.NewServer(cfg.CtrlURL, cfg.DERPID, cfg.NaviKey, cfg.PrivateKey,
+		hostname, addr, stunPort, runDERP, runSTUN,
+		setIPv4, setIPv6, dnsProvider, dnsID, dnsKey,
+		log.Printf)
 	s.SetVerifyClient(*verifyClients)
 
 	if *meshPSKFile != "" {
@@ -212,18 +220,18 @@ func main() {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(200)
 		io.WriteString(w, `<html><body>
-<h1>DERP</h1>
+<h1>司南</h1>
 <p>
   这是
-  <a href="https://tailscale.com/">蜃境</a>的一只
-  <a href="https://pkg.go.dev/tailscale.com/derp">司南</a>
+  <a href="https://tailscale.com/">蜃境 </a>的一只
+  <a href="https://pkg.go.dev/tailscale.com/derp">司南 </a>
 </p>
 `)
 		if !*runDERP {
-			io.WriteString(w, `<p>Status: <b>disabled</b></p>`)
+			io.WriteString(w, `<p>状态: <b>无中继</b></p>`)
 		}
 		if tsweb.AllowDebugAccess(r) {
-			io.WriteString(w, "<p>Debug info at <a href='/debug/'>/debug/</a>.</p>\n")
+			io.WriteString(w, "<p>调试信息在 <a href='/debug/'>/debug/</a>.</p>\n")
 		}
 	}))
 	mux.Handle("/robots.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -268,7 +276,7 @@ func main() {
 	//cgao6: 感谢Caddy
 	var tlsConfig *tls.Config
 	switch *certMode {
-	case "alpn", "dns": // ALPN challenge
+	case "letsencrypt": // ALPN challenge
 		certmagic.Default.Storage = &certmagic.FileStorage{Path: filepath.Join(homedir.HomeDir(), ".mirage", "certs")}
 		cache := certmagic.NewCache(certmagic.CacheOptions{
 			GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
@@ -282,7 +290,7 @@ func main() {
 			Agreed:               true,
 			DisableHTTPChallenge: true,
 		})
-		if *certMode == "alpn" {
+		if *dnsProvider == "" {
 			alpnPort, err := strconv.Atoi(strings.TrimPrefix(*addr, ":"))
 			if err != nil {
 				log.Fatal("Can't convert port to int")
@@ -333,8 +341,22 @@ func main() {
 				DNSProvider: provider,
 			}
 		}
+		if *dnsProvider == "" && myACME.AltTLSALPNPort != 443 {
+			cmd := exec.Command("sudo", "iptables", "-t", "nat", "-A", "PREROUTING", "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-ports", fmt.Sprint(myACME.AltTLSALPNPort))
+			err = cmd.Run()
+			if err != nil {
+				log.Fatal("Can't add iptables rule")
+			}
+		}
 		magic.Issuers = []certmagic.Issuer{myACME}
 		err = magic.ManageSync(context.TODO(), []string{*hostname})
+		if *dnsProvider == "" && myACME.AltTLSALPNPort != 443 {
+			cmd := exec.Command("sudo", "iptables", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-ports", fmt.Sprint(myACME.AltTLSALPNPort))
+			err = cmd.Run()
+			if err != nil {
+				log.Fatal("Can't add iptables rule")
+			}
+		}
 		if err != nil {
 			log.Fatal("Can't handle with the cert managesync")
 		}

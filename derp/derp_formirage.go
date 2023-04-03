@@ -119,12 +119,29 @@ type RegisterRequest struct {
 	Timestamp *time.Time
 }
 
+type NaviNode struct {
+	ID           string `gorm:"primary_key;unique;not null" json:"Name"` //映射到DERPNode的Name
+	NaviKey      string `json:"NaviKey"`                                 //记录DERPNode的MachineKey公钥
+	NaviRegionID int    `gorm:"not null" json:"RegionID"`                //映射到DERPNode的RegionID
+	HostName     string `json:"HostName"`                                //这个不需要独有，但是否必须域名呢？
+	//这个不用？ CertName string `json:",omitempty"`
+	IPv4        string `json:"IPv4"`        // 不是ipv4地址则失效，为none则禁用ipv4
+	IPv6        string `json:"IPv6"`        // 不是ipv6地址则失效，为none则禁用ipv6
+	NoSTUN      bool   `json:"NoSTUN"`      //禁用STUN
+	STUNPort    int    `json:"STUNPort"`    //0代表3478，-1代表禁用
+	NoDERP      bool   `json:"NoDERP"`      //禁用DERP
+	DERPPort    int    `json:"DERPPort"`    //0代表443
+	DNSProvider string `json:"DNSProvider"` //DNS服务商
+	DNSID       string `json:"DNSID"`       //DNS服务商的ID
+	DNSKey      string `json:"DNSKey"`      //DNS服务商的Key
+	Arch        string `json:"Arch"`        //所在环境架构，x86_64或aarch64
+}
 type RegisterResponse struct {
-	ID        string
+	NodeInfo  NaviNode
 	Timestamp *time.Time
 }
 
-func (s *Server) registerNaviToCtrl() error {
+func (s *Server) registerNaviToCtrl() (NaviNode, error) {
 	now := time.Now().Round(time.Second)
 	request := RegisterRequest{
 		ID:        s.derpID,
@@ -134,28 +151,29 @@ func (s *Server) registerNaviToCtrl() error {
 	url = strings.Replace(url, "http:", "https:", 1)
 	bodyData, err := json.Marshal(request)
 	if err != nil {
-		return fmt.Errorf("register request: %w", err)
+		return NaviNode{}, fmt.Errorf("register request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(s.ctx, "POST", url, bytes.NewReader(bodyData))
 	if err != nil {
-		return fmt.Errorf("register request: %w", err)
+		return NaviNode{}, fmt.Errorf("register request: %w", err)
 	}
 	res, err := s.nc.Do(req)
 	if err != nil {
-		return fmt.Errorf("register request: %w", err)
+		return NaviNode{}, fmt.Errorf("register request: %w", err)
 	}
 	if res.StatusCode != 200 {
 		msg, _ := io.ReadAll(res.Body)
 		res.Body.Close()
-		return fmt.Errorf("register request: http %d: %.200s",
+		return NaviNode{}, fmt.Errorf("register request: http %d: %.200s",
 			res.StatusCode, strings.TrimSpace(string(msg)))
 	}
 	resp := RegisterResponse{} // TODO: 使用我们自己的司南节点注册响应
 	if err := decode(res, &resp); err != nil {
 		s.logf("error decoding RegisterResponse with server key %s and machine key %s: %v", s.ctrlNoiseKey, s.naviPubKey, err)
-		return fmt.Errorf("register request: %v", err)
+		return NaviNode{}, fmt.Errorf("register request: %v", err)
 	}
 	s.logf("register response: %v", resp)
+
 	//TODO: 完成注册流程
-	return nil
+	return resp.NodeInfo, nil
 }

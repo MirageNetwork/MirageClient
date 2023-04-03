@@ -7,6 +7,7 @@
 *.dylib
 *.spk
 __debug_bin
+mirageNavi
 
 cmd/tailscale/tailscale
 cmd/tailscaled/tailscaled
