@@ -313,15 +313,13 @@ func NewLocalBackend(logf logger.Logf, logID logid.PublicID, store ipn.StateStor
 		loginFlags:     loginFlags,
 	}
 
-	// for now, only log sockstats on unstable builds
-	if version.IsUnstableBuild() {
-		b.sockstatLogger, err = sockstatlog.NewLogger(logpolicy.LogsDir(logf), logf, logID)
-		if err != nil {
-			log.Printf("error setting up sockstat logger: %v", err)
-		}
-		if b.sockstatLogger != nil {
-			b.sockstatLogger.SetLoggingEnabled(true)
-		}
+	b.sockstatLogger, err = sockstatlog.NewLogger(logpolicy.LogsDir(logf), logf, logID)
+	if err != nil {
+		log.Printf("error setting up sockstat logger: %v", err)
+	}
+	// Enable sockstats logs only on unstable builds
+	if version.IsUnstableBuild() && b.sockstatLogger != nil {
+		b.sockstatLogger.SetLoggingEnabled(true)
 	}
 
 	// Default filter blocks everything and logs nothing, until Start() is called.
@@ -400,7 +398,14 @@ func (b *LocalBackend) SetComponentDebugLogging(component string, until time.Tim
 		setEnabled = mc.SetDebugLoggingEnabled
 	case "sockstats":
 		if b.sockstatLogger != nil {
-			setEnabled = b.sockstatLogger.SetLoggingEnabled
+			setEnabled = func(v bool) {
+				b.sockstatLogger.SetLoggingEnabled(v)
+				// Flush (and thus upload) logs when the enabled period ends,
+				// so that the logs are available for debugging.
+				if !v {
+					b.sockstatLogger.Flush()
+				}
+			}
 		}
 	}
 	if setEnabled == nil || !slices.Contains(debuggableComponents, component) {
