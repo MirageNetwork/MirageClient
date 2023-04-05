@@ -120,6 +120,8 @@ For help on subcommands, add --help after: "mirage status --help".
 			pingCmd,
 			//			ncCmd,
 			//			sshCmd,
+			funnelCmd,
+			serveCmd,
 			versionCmd,
 			//			webCmd,
 			//			fileCmd,
@@ -147,10 +149,6 @@ For help on subcommands, add --help after: "mirage status --help".
 	switch {
 	case slices.Contains(args, "debug"):
 		rootCmd.Subcommands = append(rootCmd.Subcommands, debugCmd)
-	case slices.Contains(args, "funnel"):
-		rootCmd.Subcommands = append(rootCmd.Subcommands, funnelCmd)
-	case slices.Contains(args, "serve"):
-		rootCmd.Subcommands = append(rootCmd.Subcommands, serveCmd)
 	case slices.Contains(args, "update"):
 		rootCmd.Subcommands = append(rootCmd.Subcommands, updateCmd)
 	}
