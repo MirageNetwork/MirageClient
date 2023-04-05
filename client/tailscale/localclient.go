@@ -1122,7 +1122,6 @@ func (lc *LocalClient) StreamDebugCapture(ctx context.Context) (io.ReadCloser, e
 	}
 	res, err := lc.doLocalRequestNiceError(req)
 	if err != nil {
-		res.Body.Close()
 		return nil, err
 	}
 	if res.StatusCode != 200 {
