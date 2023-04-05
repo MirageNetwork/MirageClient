@@ -25,7 +25,7 @@ func Handler(s *derp.Server) http.Handler {
 			if up != "" {
 				log.Printf("Weird upgrade: %q", up)
 			}
-			http.Error(w, "DERP requires connection upgrade", http.StatusUpgradeRequired)
+			http.Error(w, "MirageNavi requires connection upgrade", http.StatusUpgradeRequired)
 			return
 		}
 

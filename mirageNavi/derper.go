@@ -174,14 +174,22 @@ func main() {
 
 	//	serveTLS := tsweb.IsProd443(*addr) || *certMode == "manual"
 
-	s := derp.NewServer(cfg.CtrlURL, cfg.DERPID, cfg.NaviKey, cfg.PrivateKey,
-		hostname, addr, stunPort, runDERP, runSTUN,
-		setIPv4, setIPv6, dnsProvider, dnsID, dnsKey,
-		log.Printf)
+	s := derp.NewServer(cfg.PrivateKey, log.Printf)
 
 	if *ctrlURL != "" && *derpID != "" {
 		*verifyClients = true
-		s.Cronjob.AddFunc("@every 2m", func() {
+		s.PrepareManaged(cfg.CtrlURL, cfg.DERPID, cfg.NaviKey)
+		naviInfo, err := s.TryLogin()
+		if err != nil {
+			log.Fatal(err) //TODO: cgao6: 遇到获取失败且需要处理的情形
+		}
+		s.UpdateNaviInfo(naviInfo,
+			hostname, addr, setIPv4, setIPv6, dnsProvider, dnsID, dnsKey,
+			stunPort,
+			runDERP, runSTUN,
+		)
+		s.PullNodesList()
+		s.Cronjob.AddFunc("@every 1m", func() {
 			s.PullNodesList()
 		})
 		s.Cronjob.Start()

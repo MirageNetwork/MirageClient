@@ -2,15 +2,18 @@ package derp
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
-	"go4.org/mem"
+	"github.com/patrickmn/go-cache"
+	"github.com/robfig/cron/v3"
 	"tailscale.com/control/controlclient"
 	"tailscale.com/net/dnscache"
 	"tailscale.com/net/dnsfallback"
@@ -19,12 +22,10 @@ import (
 	"tailscale.com/net/tshttpproxy"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/key"
-	"tailscale.com/util/multierr"
 	"tailscale.com/util/singleflight"
 )
 
-func (s *Server) createHttpc() *http.Client {
-	s.dialer = &tsdial.Dialer{Logf: s.logf}
+func (s *Server) createHttpc(dialer *tsdial.Dialer) *http.Client {
 	serverURL, err := url.Parse(s.ctrlURL)
 	if err != nil {
 		s.logf("failed to parse control URL %q: %v", s.ctrlURL, err)
@@ -40,8 +41,8 @@ func (s *Server) createHttpc() *http.Client {
 	tr.Proxy = tshttpproxy.ProxyFromEnvironment
 	tshttpproxy.SetTransportGetProxyConnectHeader(tr)
 	tr.TLSClientConfig = tlsdial.Config(serverURL.Hostname(), tr.TLSClientConfig)
-	tr.DialContext = dnscache.Dialer(s.dialer.SystemDial, dnsCache)
-	tr.DialTLSContext = dnscache.TLSDialer(s.dialer.SystemDial, dnsCache, tr.TLSClientConfig)
+	tr.DialContext = dnscache.Dialer(dialer.SystemDial, dnsCache)
+	tr.DialTLSContext = dnscache.TLSDialer(dialer.SystemDial, dnsCache, tr.TLSClientConfig)
 	tr.ForceAttemptHTTP2 = true
 	// Disable implicit gzip compression; the various
 	// handlers (register, map, set-dns, etc) do their own
@@ -51,55 +52,48 @@ func (s *Server) createHttpc() *http.Client {
 }
 
 // cgao6: 用以获取控制器的公钥
-func (s *Server) loadServerPubKeys() (*tailcfg.OverTLSPublicKeyResponse, error) {
+func (s *Server) prepareNoiseClient() error {
 	keyURL := fmt.Sprintf("%v/key?v=%d", s.ctrlURL, tailcfg.CurrentCapabilityVersion)
 	req, err := http.NewRequestWithContext(s.ctx, "GET", keyURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create control key request: %v", err)
+		return fmt.Errorf("create control key request: %v", err)
 	}
-	res, err := s.httpc.Do(req)
+	dialer := &tsdial.Dialer{Logf: s.logf}
+	httpc := s.createHttpc(dialer)
+	res, err := httpc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch control key: %v", err)
+		return fmt.Errorf("fetch control key: %v", err)
 	}
 	defer res.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(res.Body, 64<<10))
 	if err != nil {
-		return nil, fmt.Errorf("fetch control key response: %v", err)
+		return fmt.Errorf("fetch control key response: %v", err)
 	}
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("fetch control key: %d", res.StatusCode)
+		return fmt.Errorf("fetch control key: %d", res.StatusCode)
 	}
-	var out tailcfg.OverTLSPublicKeyResponse
-	jsonErr := json.Unmarshal(b, &out)
-	if jsonErr == nil {
-		return &out, nil
+	var keys tailcfg.OverTLSPublicKeyResponse
+	jsonErr := json.Unmarshal(b, &keys)
+	if jsonErr != nil {
+		return fmt.Errorf("fetch control key response: %v", jsonErr)
+	}
+	if !keys.PublicKey.IsZero() {
+		httpc.CloseIdleConnections()
 	}
 
-	// Some old control servers might not be updated to send the new format.
-	// Accept the old pre-JSON format too.
-	out = tailcfg.OverTLSPublicKeyResponse{}
-	k, err := key.ParseMachinePublicUntyped(mem.B(b))
-	if err != nil {
-		return nil, multierr.New(jsonErr, err)
-	}
-	out.LegacyPublicKey = k
-	return &out, nil
-}
-
-func (s *Server) getNoiseClient() (*controlclient.NoiseClient, error) {
 	var sfGroup singleflight.Group[struct{}, *controlclient.NoiseClient]
-	nc, err, _ := sfGroup.Do(struct{}{}, func() (*controlclient.NoiseClient, error) {
+	s.nc, err, _ = sfGroup.Do(struct{}{}, func() (*controlclient.NoiseClient, error) {
 		s.logf("creating new noise client")
-		nc, err := controlclient.NewNoiseClient(s.naviPriKey, s.ctrlNoiseKey, s.ctrlURL, s.dialer, nil)
+		nc, err := controlclient.NewNoiseClient(s.naviPriKey, keys.PublicKey, s.ctrlURL, dialer, nil)
 		if err != nil {
 			return nil, err
 		}
 		return nc, nil
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return nc, nil
+	return nil
 }
 
 func decode(res *http.Response, v any) error {
@@ -114,9 +108,15 @@ func decode(res *http.Response, v any) error {
 	return json.Unmarshal(msg, v)
 }
 
-type RegisterRequest struct {
-	ID        string
-	Timestamp *time.Time
+// 在受管情况下进行初始化
+func (s *Server) PrepareManaged(url, id string, naviKey key.MachinePrivate) error {
+	s.ctx = context.Background()
+	s.ctrlURL = url
+	s.derpID = id
+	s.naviPriKey = naviKey
+	s.trustNodesCache = cache.New(0, 0)
+	s.Cronjob = cron.New()
+	return s.prepareNoiseClient()
 }
 
 type NaviNode struct {
@@ -141,13 +141,11 @@ type RegisterResponse struct {
 	Timestamp *time.Time
 }
 
-func (s *Server) registerNaviToCtrl() (NaviNode, error) {
-	now := time.Now().Round(time.Second)
-	request := RegisterRequest{
-		ID:        s.derpID,
-		Timestamp: &now,
-	}
-	url := fmt.Sprintf("%s/navi/register", s.ctrlURL)
+func (s *Server) TryLogin() (NaviNode, error) {
+	request := tailcfg.RegisterRequest{}
+	request.Auth.Provider = "Mirage"
+	request.Auth.LoginName = s.derpID
+	url := fmt.Sprintf("%s/machine/register", s.ctrlURL)
 	url = strings.Replace(url, "http:", "https:", 1)
 	bodyData, err := json.Marshal(request)
 	if err != nil {
@@ -157,6 +155,7 @@ func (s *Server) registerNaviToCtrl() (NaviNode, error) {
 	if err != nil {
 		return NaviNode{}, fmt.Errorf("register request: %w", err)
 	}
+
 	res, err := s.nc.Do(req)
 	if err != nil {
 		return NaviNode{}, fmt.Errorf("register request: %w", err)
@@ -167,15 +166,39 @@ func (s *Server) registerNaviToCtrl() (NaviNode, error) {
 		return NaviNode{}, fmt.Errorf("register request: http %d: %.200s",
 			res.StatusCode, strings.TrimSpace(string(msg)))
 	}
-	resp := RegisterResponse{} // TODO: 使用我们自己的司南节点注册响应
+	resp := RegisterResponse{}
 	if err := decode(res, &resp); err != nil {
-		s.logf("error decoding RegisterResponse with server key %s and machine key %s: %v", s.ctrlNoiseKey, s.naviPubKey, err)
+		s.logf("error decoding RegisterResponse")
 		return NaviNode{}, fmt.Errorf("register request: %v", err)
 	}
 	s.logf("register response: %v", resp)
 
-	//TODO: 完成注册流程
 	return resp.NodeInfo, nil
+}
+
+func (s *Server) UpdateNaviInfo(
+	naviInfo NaviNode,
+	hostname, addr, setIPv4, setIPv6, dnsProvider, dnsID, dnsKey *string,
+	stunPort *int,
+	runDERP, runSTUN *bool,
+) error {
+	*hostname = naviInfo.HostName
+	if !naviInfo.NoDERP {
+		*addr = ":" + strconv.Itoa(naviInfo.DERPPort)
+	} else {
+		*runDERP = false
+	}
+	if !naviInfo.NoSTUN {
+		*stunPort = naviInfo.STUNPort
+	} else {
+		*runSTUN = false
+	}
+	*setIPv4 = naviInfo.IPv4
+	*setIPv6 = naviInfo.IPv6
+	*dnsProvider = naviInfo.DNSProvider
+	*dnsID = naviInfo.DNSID
+	*dnsKey = naviInfo.DNSKey
+	return nil
 }
 
 type PullNodesListResponse struct {
@@ -184,10 +207,10 @@ type PullNodesListResponse struct {
 }
 
 func (s *Server) PullNodesList() error {
-	now := time.Now().Round(time.Second)
-	request := RegisterRequest{
-		ID:        s.derpID,
-		Timestamp: &now,
+	request := tailcfg.MapRequest{}
+	request.Hostinfo = &tailcfg.Hostinfo{
+		FrontendLogID: "MirageNavi",
+		BackendLogID:  s.derpID,
 	}
 	url := fmt.Sprintf("%s/navi/map", s.ctrlURL)
 	url = strings.Replace(url, "http:", "https:", 1)
@@ -212,7 +235,7 @@ func (s *Server) PullNodesList() error {
 
 	resp := PullNodesListResponse{}
 	if err := decode(res, &resp); err != nil {
-		s.logf("error decoding TrustNodeList with server key %s and machine key %s: %v", s.ctrlNoiseKey, s.naviPubKey, err)
+		s.logf("error decoding TrustNodeList: %v", err)
 		return fmt.Errorf("map request: %v", err)
 	}
 	s.logf("map response: %v", resp)
