@@ -1125,7 +1125,7 @@ func (s *Server) verifyClient(clientKey key.NodePublic, info *clientInfo) error 
 		}
 	} else { // 受管，采用控制器验证
 		log.Printf("derp: verify client %v", clientKey.String())
-		if _, ok := s.trustNodesCache.Get(clientKey.String()); !ok {
+		if _, ok := s.trustNodesCache.Get(strings.TrimPrefix(clientKey.String(), "nodekey:")); !ok {
 			return fmt.Errorf("client %v not acceptable due to ctrl server", clientKey)
 		}
 	}
