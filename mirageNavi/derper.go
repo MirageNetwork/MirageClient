@@ -188,10 +188,6 @@ func main() {
 			stunPort,
 			runDERP, runSTUN,
 		)
-		s.PullNodesList()
-		s.Cronjob.AddFunc("@every 1m", func() {
-			s.PullNodesList()
-		})
 		s.Cronjob.Start()
 		defer s.Cronjob.Stop()
 	}
@@ -215,6 +211,11 @@ func main() {
 	expvar.Publish("derp", s.ExpVar())
 
 	mux := http.NewServeMux()
+
+	if *ctrlURL != "" && *derpID != "" { //受管节点开启noise管理端口
+		mux.HandleFunc("/ts2021", s.NoiseUpgradeHandler)
+	}
+
 	if *runDERP {
 		derpHandler := derphttp.Handler(s)
 		derpHandler = addWebSocketSupport(s, derpHandler)
@@ -296,7 +297,7 @@ func main() {
 		})
 		magic := certmagic.New(cache, certmagic.Config{})
 		myACME := certmagic.NewACMEIssuer(magic, certmagic.ACMEIssuer{
-			CA:                   certmagic.LetsEncryptStagingCA, //certmagic.LetsEncryptProductionCA,
+			CA:                   certmagic.LetsEncryptProductionCA, // certmagic.LetsEncryptStagingCA,
 			Email:                "gps949@outlook.com",
 			Agreed:               true,
 			DisableHTTPChallenge: true,

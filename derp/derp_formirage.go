@@ -12,11 +12,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/patrickmn/go-cache"
 	"github.com/robfig/cron/v3"
+	"github.com/rs/zerolog/log"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"tailscale.com/control/controlbase"
 	"tailscale.com/control/controlclient"
+	"tailscale.com/control/controlhttp"
 	"tailscale.com/net/dnscache"
 	"tailscale.com/net/dnsfallback"
+	"tailscale.com/net/netutil"
 	"tailscale.com/net/tlsdial"
 	"tailscale.com/net/tsdial"
 	"tailscale.com/net/tshttpproxy"
@@ -137,8 +144,9 @@ type NaviNode struct {
 	Arch        string `json:"Arch"`        //所在环境架构，x86_64或aarch64
 }
 type RegisterResponse struct {
-	NodeInfo  NaviNode
-	Timestamp *time.Time
+	NaviInfo   NaviNode
+	TrustNodes []string `json:"TrustNodes"`
+	Timestamp  *time.Time
 }
 
 func (s *Server) TryLogin() (NaviNode, error) {
@@ -160,6 +168,7 @@ func (s *Server) TryLogin() (NaviNode, error) {
 	if err != nil {
 		return NaviNode{}, fmt.Errorf("register request: %w", err)
 	}
+
 	if res.StatusCode != 200 {
 		msg, _ := io.ReadAll(res.Body)
 		res.Body.Close()
@@ -171,9 +180,16 @@ func (s *Server) TryLogin() (NaviNode, error) {
 		s.logf("error decoding RegisterResponse")
 		return NaviNode{}, fmt.Errorf("register request: %v", err)
 	}
+
+	s.trustNodesCache.Flush()
+	s.trustNodesCache.Set("seqnum", 0, -1)
+	for _, nkey := range resp.TrustNodes {
+		s.trustNodesCache.Set(nkey, struct{}{}, -1)
+	}
+
 	s.logf("register response: %v", resp)
 
-	return resp.NodeInfo, nil
+	return resp.NaviInfo, nil
 }
 
 func (s *Server) UpdateNaviInfo(
@@ -202,8 +218,8 @@ func (s *Server) UpdateNaviInfo(
 }
 
 type PullNodesListResponse struct {
-	TrustNodesList map[string]string `json:"TrustNodesList"`
-	Timestamp      *time.Time        `json:"Timestamp"`
+	TrustNodes []string   `json:"TrustNodes"`
+	Timestamp  *time.Time `json:"Timestamp"`
 }
 
 func (s *Server) PullNodesList() error {
@@ -212,7 +228,7 @@ func (s *Server) PullNodesList() error {
 		FrontendLogID: "MirageNavi",
 		BackendLogID:  s.derpID,
 	}
-	url := fmt.Sprintf("%s/navi/map", s.ctrlURL)
+	url := fmt.Sprintf("%s/navi/nodes", s.ctrlURL)
 	url = strings.Replace(url, "http:", "https:", 1)
 	bodyData, err := json.Marshal(request)
 	if err != nil {
@@ -240,11 +256,111 @@ func (s *Server) PullNodesList() error {
 	}
 	s.logf("map response: %v", resp)
 
-	expire := time.Now().Add(10 * time.Minute)
 	s.trustNodesCache.Flush()
-	for nkey := range resp.TrustNodesList {
-		s.trustNodesCache.Set(nkey, struct{}{}, expire.Sub(time.Now()))
+	s.trustNodesCache.Set("seqnum", 0, -1)
+	for _, nkey := range resp.TrustNodes {
+		s.trustNodesCache.Set(nkey, struct{}{}, -1)
 	}
 
 	return nil
+}
+
+type ts2021App struct {
+	navi *Server
+	conn *controlbase.Conn
+}
+
+func (s *Server) NoiseUpgradeHandler(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	log.Trace().Caller().Msg("noise upgrade handler for controlserver " + r.RemoteAddr)
+	upgrade := r.Header.Get("Upgrade")
+	if upgrade == "" {
+		// This probably means that the user is running Headscale behind an
+		// improperly configured reverse proxy. TS2021 requires WebSockets to
+		// be passed to Headscale. Let's give them a hint.
+		log.Warn().
+			Caller().
+			Msg("No Upgrade header in TS2021 request. If headscale is behind a reverse proxy, make sure it is configured to pass WebSockets through.")
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	noiseConn, err := controlhttp.AcceptHTTP(r.Context(), w, r, s.naviPriKey, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("noise upgrade failed")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	ts2021App := ts2021App{
+		navi: s,
+		conn: noiseConn,
+	}
+
+	router := mux.NewRouter()
+	router.HandleFunc("/ctrl/nodes", ts2021App.NoiseNodeChangeHandler).
+		Methods(http.MethodPost)
+
+	server := http.Server{
+		ReadTimeout: 30 * time.Second,
+	}
+	server.Handler = h2c.NewHandler(router, &http2.Server{})
+	err = server.Serve(netutil.NewOneConnListener(noiseConn, nil))
+	if err != nil {
+		log.Trace().Caller().Err(err).Msg("The HTTP2 server was closed")
+	}
+}
+
+type NodesChange struct {
+	SeqNum     int
+	AddNode    string
+	RemoveNode string
+}
+
+func (t *ts2021App) NoiseNodeChangeHandler(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	log.Trace().Caller().Msg("noise node change handler for controlserver " + r.RemoteAddr)
+
+	var nodesChange NodesChange
+	err := json.NewDecoder(r.Body).Decode(&nodesChange)
+	if err != nil {
+		log.Error().Err(err).Msg("error decoding node change")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Trace().Caller().Msgf("node change: %+v", nodesChange)
+
+	sq, ok := t.navi.trustNodesCache.Get("seqnum")
+	if !ok {
+		log.Error().Msg("seqnum not found")
+		http.Error(w, "seqnum not found", http.StatusInternalServerError)
+		return
+	}
+	seqnum, ok := sq.(int)
+	if !ok {
+		log.Error().Msg("seqnum not int")
+		http.Error(w, "seqnum not int", http.StatusInternalServerError)
+		return
+	}
+	if nodesChange.SeqNum != seqnum+1 {
+		log.Warn().Msg("seqnum not match! Need to pull nodes list again ")
+		err := t.navi.PullNodesList()
+		if err != nil {
+			log.Error().Err(err).Msg("error pull nodes list")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	t.navi.trustNodesCache.Set("seqnum", nodesChange.SeqNum, -1)
+	if nodesChange.AddNode != "" {
+		t.navi.trustNodesCache.Set(nodesChange.AddNode, struct{}{}, -1)
+	}
+	if nodesChange.RemoveNode != "" {
+		t.navi.trustNodesCache.Delete(nodesChange.RemoveNode)
+	}
 }

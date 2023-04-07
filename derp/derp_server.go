@@ -1124,7 +1124,7 @@ func (s *Server) verifyClient(clientKey key.NodePublic, info *clientInfo) error 
 			return fmt.Errorf("client %v not in set of peers", clientKey)
 		}
 	} else { // 受管，采用控制器验证
-		if _, ok := s.trustNodesCache.Get(clientKey.String()); !ok {
+		if _, ok := s.trustNodesCache.Get(strings.TrimPrefix(clientKey.String(), "nodekey:")); !ok {
 			return fmt.Errorf("client %v not acceptable due to ctrl server", clientKey)
 		}
 	}
