@@ -178,7 +178,10 @@ func main() {
 
 	if *ctrlURL != "" && *derpID != "" {
 		*verifyClients = true
-		s.PrepareManaged(cfg.CtrlURL, cfg.DERPID, cfg.NaviKey)
+		err = s.PrepareManaged(cfg.CtrlURL, cfg.DERPID, cfg.NaviKey)
+		if err != nil {
+			log.Fatal(err)
+		}
 		naviInfo, err := s.TryLogin()
 		if err != nil {
 			log.Fatal(err) //TODO: cgao6: 遇到获取失败且需要处理的情形
