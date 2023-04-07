@@ -95,8 +95,9 @@ type align64 [0]atomic.Int64 // for side effect of its 64-bit alignment
 
 // Server is a DERP server.
 type Server struct {
-	ctrlURL    string                     // 控制器地址
-	derpID     string                     // 自身的ID序列
+	ctrlURL    string // 控制器地址
+	derpID     string // 自身的ID序列
+	ctrlPubkey key.MachinePublic
 	naviPriKey key.MachinePrivate         // 用于和控制器进行请求
 	ctx        context.Context            // noise请求上下文
 	nc         *controlclient.NoiseClient // 用于和控制器进行请求

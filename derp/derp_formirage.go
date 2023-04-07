@@ -87,6 +87,7 @@ func (s *Server) prepareNoiseClient() error {
 	if !keys.PublicKey.IsZero() {
 		httpc.CloseIdleConnections()
 	}
+	s.ctrlPubkey = keys.PublicKey
 
 	var sfGroup singleflight.Group[struct{}, *controlclient.NoiseClient]
 	s.nc, err, _ = sfGroup.Do(struct{}{}, func() (*controlclient.NoiseClient, error) {
@@ -300,6 +301,7 @@ func (s *Server) NoiseUpgradeHandler(
 	}
 
 	router := mux.NewRouter()
+	router.Use(ts2021App.NoiseAuthMiddleware)
 	router.HandleFunc("/ctrl/nodes", ts2021App.NoiseNodeChangeHandler).
 		Methods(http.MethodPost)
 
@@ -311,6 +313,21 @@ func (s *Server) NoiseUpgradeHandler(
 	if err != nil {
 		log.Trace().Caller().Err(err).Msg("The HTTP2 server was closed")
 	}
+}
+
+func (t *ts2021App) NoiseAuthMiddleware(
+	next http.Handler,
+) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Trace().Caller().Msg("noise auth middleware for controlserver " + r.RemoteAddr)
+
+		if t.conn.Peer() != t.navi.ctrlPubkey {
+			log.Error().Msg("noise auth failed")
+			http.Error(w, "noise auth failed", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 type NodesChange struct {
