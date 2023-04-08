@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"expvar"
 	"fmt"
 	"io"
 	"net/http"
@@ -266,6 +267,29 @@ func (s *Server) PullNodesList() error {
 	return nil
 }
 
+const (
+	noContentChallengeHeader = "X-Tailscale-Challenge"
+	noContentResponseHeader  = "X-Tailscale-Response"
+)
+
+func isChallengeChar(c rune) bool {
+	// Semi-randomly chosen as a limited set of valid characters
+	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') ||
+		('0' <= c && c <= '9') ||
+		c == '.' || c == '-' || c == '_'
+}
+func serveNoContent(w http.ResponseWriter, r *http.Request) {
+	if challenge := r.Header.Get(noContentChallengeHeader); challenge != "" {
+		badChar := strings.IndexFunc(challenge, func(r rune) bool {
+			return !isChallengeChar(r)
+		}) != -1
+		if len(challenge) <= 64 && !badChar {
+			w.Header().Set(noContentResponseHeader, "response "+challenge)
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 type ts2021App struct {
 	navi *Server
 	conn *controlbase.Conn
@@ -304,6 +328,8 @@ func (s *Server) NoiseUpgradeHandler(
 	router.Use(ts2021App.NoiseAuthMiddleware)
 	router.HandleFunc("/ctrl/nodes", ts2021App.NoiseNodeChangeHandler).
 		Methods(http.MethodPost)
+	router.Handle("/ctrl/vars", expvar.Handler())
+	router.Handle("/generate_204", http.HandlerFunc(serveNoContent))
 
 	server := http.Server{
 		ReadTimeout: 30 * time.Second,
