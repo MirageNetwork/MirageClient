@@ -88,6 +88,18 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/tailscaled",
         },
-
+        {
+            "name": "Navi Start",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/mirageNavi",
+            "args": [
+                "-ctrl-url",
+                "https://sdp.ipv4.uk",
+                "-id",
+                "04279a4c-a50a-4f63-8ed1-1df91007ab02",
+             ]
+        },
     ]
 }
