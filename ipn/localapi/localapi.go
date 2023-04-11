@@ -221,9 +221,19 @@ func (h *Handler) validHost(hostname string) bool {
 	return addr.IsLoopback()
 }
 
+var winHndSwitchAutoStart localAPIHandler
+var winHndGetAutoStart localAPIHandler
+
 // handlerForPath returns the LocalAPI handler for the provided Request.URI.Path.
 // (the path doesn't include any query parameters)
 func handlerForPath(urlPath string) (h localAPIHandler, ok bool) {
+
+	// cgao6: 为后端增加windows平台一些独有的操作
+	if runtime.GOOS == "windows" {
+		handler["swicthAutoStart"] = winHndSwitchAutoStart
+		handler["getAutoStart"] = winHndGetAutoStart
+	}
+
 	if urlPath == "/" {
 		return (*Handler).serveLocalAPIRoot, true
 	}

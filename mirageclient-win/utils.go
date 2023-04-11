@@ -3,337 +3,242 @@
 package main
 
 import (
-	"errors"
-	"net/netip"
+	"log"
 	"os"
 	"path/filepath"
-	"reflect"
-	"strings"
+	"syscall"
+	"time"
 
+	"github.com/tailscale/walk"
+	"github.com/tailscale/win"
 	"tailscale.com/ipn"
-	"tailscale.com/ipn/ipnstate"
-	"tailscale.com/mirageclient-win/resource"
-	"tailscale.com/mirageclient-win/systray"
-	"tailscale.com/net/tsaddr"
-	"tailscale.com/tailcfg"
-	"tailscale.com/types/preftype"
 )
 
-const logo_png string = "./logo.png"
-const app_name string = "蜃境"
-const serviceName string = "Mirage"
-const socket_path string = `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
-const engine_port uint16 = 0 //动态端口机制
-var program_path string = filepath.Join(os.Getenv("ProgramData"), serviceName)
-var control_url string = "https://sdp.ipv4.uk" //TODO: 改为读取conf文件，首次通过gui设置
+const serviceName = "Mirage"
+const defaultServerCode = "ipv4.uk"
+const socketPath = `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
+const enginePort = 0    //0 -动态端口机制
+const debugPort = 54321 // 调试信息页面端口
 
-var (
-	ipv4default = netip.MustParsePrefix("0.0.0.0/0")
-	ipv6default = netip.MustParsePrefix("::/0")
+var programPath string = filepath.Join(os.Getenv("ProgramData"), serviceName)
+
+type BackendVersion string
+type WatcherUpEvent struct{}
+
+// 根据运行状态设置图标
+func (m *MiraMenu) ChangeIconDueRunState() {
+	switch ipn.State(m.data.State) {
+	case ipn.NeedsLogin:
+		m.setIcon(Logo)
+	case ipn.NoState:
+		m.setIcon(HasIssue)
+	case ipn.Stopped:
+		m.setIcon(Disconn)
+	case ipn.Running:
+		switch true {
+		case m.data.Prefs.AdvertisesExitNode():
+			m.setIcon(AsExit)
+		case !m.data.Prefs.ExitNodeID.IsZero() || m.data.Prefs.ExitNodeIP.IsValid():
+			m.setIcon(Exit)
+		default:
+			m.setIcon(Conn)
+		}
+	case ipn.Starting:
+		stopSpinner := make(chan struct{})
+		m.data.StateChanged().Once(func(data interface{}) {
+			stopSpinner <- struct{}{}
+		})
+		go func(stateChanged <-chan struct{}) {
+			iconPtr := true
+			ticker := time.NewTicker(300 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					if iconPtr {
+						m.setIcon(Ing1)
+					} else {
+						m.setIcon(Ing2)
+					}
+					iconPtr = !iconPtr
+				case <-stateChanged:
+					return
+				}
+			}
+		}(stopSpinner)
+	}
+
+}
+
+// openURLInBrowser 在浏览器中打开指定的url
+func OpenURLInBrowser(url string) {
+	win.ShellExecute(0, nil, syscall.StringToUTF16Ptr(url), nil, nil, win.SW_SHOWDEFAULT)
+}
+
+type NotifyLvL int // 通知等级
+const (
+	NL_Msg   NotifyLvL = iota // 普通消息
+	NL_Info                   // 信息
+	NL_Warn                   // 警告
+	NL_Error                  // 错误
 )
 
-func CreateDefaultPref() *ipn.Prefs {
-	routes := make([]netip.Prefix, 0, 0)
-	var tags []string
-	prefs := ipn.NewPrefs()
-	prefs.ControlURL = control_url
-	prefs.WantRunning = true
-	prefs.RouteAll = false
-	prefs.ExitNodeAllowLANAccess = false
-	prefs.CorpDNS = false
-	prefs.AllowSingleHosts = true
-	prefs.ShieldsUp = false
-	prefs.RunSSH = false
-
-	prefs.AdvertiseRoutes = routes
-	prefs.AdvertiseTags = tags
-	prefs.Hostname = ""
-	prefs.ForceDaemon = false
-	prefs.LoggedOut = false
-	prefs.OperatorUser = ""
-	prefs.NetfilterMode = preftype.NetfilterOn
-
-	return prefs
-}
-
-func GetAllMaskedPref(ipnPref ipn.Prefs) ipn.MaskedPrefs {
-	return ipn.MaskedPrefs{Prefs: ipnPref,
-		ControlURLSet:             true,
-		RouteAllSet:               true,
-		AllowSingleHostsSet:       true,
-		ExitNodeIDSet:             true,
-		ExitNodeIPSet:             true,
-		ExitNodeAllowLANAccessSet: true,
-		CorpDNSSet:                true,
-		RunSSHSet:                 true,
-		WantRunningSet:            true,
-		LoggedOutSet:              true,
-		ShieldsUpSet:              true,
-		AdvertiseTagsSet:          true,
-		HostnameSet:               true,
-		NotepadURLsSet:            true,
-		ForceDaemonSet:            true,
-		EggSet:                    true,
-		AdvertiseRoutesSet:        true,
-		NoSNATSet:                 true,
-		NetfilterModeSet:          true,
-		OperatorUserSet:           true,
-	}
-}
-
-func updatePrefs(st *ipnstate.Status, prefs, curPrefs *ipn.Prefs) (simpleUp bool, justEditMP *ipn.MaskedPrefs, err error) {
-	if prefs.OperatorUser == "" && curPrefs.OperatorUser == os.Getenv("USER") {
-		prefs.OperatorUser = curPrefs.OperatorUser
-	}
-	tagsChanged := !reflect.DeepEqual(curPrefs.AdvertiseTags, prefs.AdvertiseTags)
-	simpleUp = curPrefs.Persist != nil &&
-		curPrefs.Persist.LoginName != "" &&
-		st.BackendState != ipn.NeedsLogin.String()
-	justEdit := st.BackendState == ipn.Running.String() && !tagsChanged
-
-	if justEdit {
-		justEditMP = new(ipn.MaskedPrefs)
-		justEditMP.WantRunningSet = true
-		justEditMP.Prefs = *prefs
-		justEditMP.ControlURLSet = true
+// SendNotify 发送通知到系统弹出消息（会同时记录日志）
+func (s *MiraMenu) SendNotify(title string, msg string, level NotifyLvL) {
+	var send func(string, string) error
+	switch level {
+	case NL_Msg:
+		send = s.tray.ShowMessage
+	case NL_Info:
+		send = s.tray.ShowInfo
+	case NL_Warn:
+		send = s.tray.ShowWarning
+	case NL_Error:
+		send = s.tray.ShowError
 	}
 
-	return simpleUp, justEditMP, nil
-}
-
-func kickLogin() {
-	prefs := CreateDefaultPref()
-	prefs.CorpDNS = gui.optDNSMenu.Checked()
-	prefs.RouteAll = gui.optSubnetMenu.Checked()
-	if err := LC.CheckPrefs(ctx, prefs); err != nil {
-		logNotify("Pref出错", err)
-	}
-	if err := LC.Start(ctx, ipn.Options{
-		AuthKey:     "",
-		UpdatePrefs: prefs,
-	}); err != nil {
-		logNotify("无法开始", err)
-	}
-}
-
-func refreshPrefs() {
-	newPref, err := LC.GetPrefs(ctx)
-	if err == nil {
-		if newPref.CorpDNS {
-			gui.optDNSMenu.Check()
-		} else {
-			gui.optDNSMenu.Uncheck()
+	if msg != "" {
+		log.Printf("[小喇叭] 标题: %s; 内容: %s", title, msg)
+		err := send(title, msg)
+		if err != nil {
+			log.Printf("发送通知失败: %s", err)
 		}
-		if newPref.RouteAll {
-			gui.optSubnetMenu.Check()
-		} else {
-			gui.optSubnetMenu.Uncheck()
-		}
-		if newPref.ExitNodeAllowLANAccess {
-			gui.exitNodeMenu.AllowLocalNetworkAccess.Check()
-		} else {
-			gui.exitNodeMenu.AllowLocalNetworkAccess.Uncheck()
-		}
-
-		exitNodeName := ""
-		if !newPref.ExitNodeID.IsZero() {
-			for _, exitNode := range gui.exitNodeMenu.ExitNodes {
-				if exitNode.Peer.ID == newPref.ExitNodeID {
-					exitNode.Menu.Check()
-					exitNodeName = exitNode.Peer.DNSName
-					if exitNode.Peer.UserID == newPref.Persist.UserProfile.ID {
-						exitNodeName = strings.Split(exitNodeName, ".")[0]
-					}
-				} else {
-					exitNode.Menu.Uncheck()
-				}
-			}
-		}
-		if newPref.ExitNodeIP.IsValid() {
-			for _, exitNode := range gui.exitNodeMenu.ExitNodes {
-				if newPref.ExitNodeIP.Compare(exitNode.Peer.TailscaleIPs[0]) == 0 {
-					exitNode.Menu.Check()
-					exitNodeName = exitNode.Peer.DNSName
-					if exitNode.Peer.UserID == newPref.Persist.UserProfile.ID {
-						exitNodeName = strings.Split(exitNodeName, ".")[0]
-					}
-				} else if len(exitNode.Peer.TailscaleIPs) > 1 && newPref.ExitNodeIP.Compare(exitNode.Peer.TailscaleIPs[1]) == 0 {
-					exitNode.Menu.Check()
-					exitNodeName = exitNode.Peer.DNSName
-					if exitNode.Peer.UserID == newPref.Persist.UserProfile.ID {
-						exitNodeName = strings.Split(exitNodeName, ".")[0]
-					}
-				} else {
-					exitNode.Menu.Uncheck()
-				}
-			}
-		}
-		if exitNodeName != "" {
-			gui.exitNodeMenu.Outer.SetTitle("出口节点(" + exitNodeName + ")")
-			gui.exitNodeMenu.NoneExit.Uncheck()
-		} else {
-			gui.exitNodeMenu.Outer.SetTitle("出口节点")
-			gui.exitNodeMenu.NoneExit.Check()
-		}
-		if newPref.AdvertisesExitNode() {
-			gui.exitNodeMenu.RunExitNode.SetTitle("正用作出口节点")
-			gui.exitNodeMenu.RunExitNode.Check()
-			if newPref.WantRunning {
-				systray.SetTemplateIcon(resource.Icon_asexit, resource.Icon_asexit)
-			}
-		} else {
-			gui.exitNodeMenu.RunExitNode.SetTitle("用作出口节点…")
-			gui.exitNodeMenu.RunExitNode.Uncheck()
-			if newPref.WantRunning {
-				systray.SetTemplateIcon(resource.Mlogo, resource.Mlogo)
-			} else {
-				systray.SetTemplateIcon(resource.Logom, resource.Logom)
-			}
-		}
+	} else {
+		log.Printf("[小喇叭]: %s; ", title)
+		send("", title)
 	}
 }
 
-func switchDNSOpt(newV bool) error {
-	maskedPrefs := &ipn.MaskedPrefs{
-		Prefs: ipn.Prefs{
-			CorpDNS: newV,
-		},
-		CorpDNSSet: true,
-	}
-	curPrefs, err := LC.GetPrefs(ctx)
+// PopConfirmDlg 弹出确认对话框
+func PopConfirmDlg(title, msg string, w, h int) (confirm bool) {
+	dlg, err := walk.NewDialogWithFixedSize(nil)
 	if err != nil {
-		return err
+		log.Printf("[工具人] 创建对话框出错: %v", err)
 	}
+	dlg.SetName(title)
+	dlg.SetTitle(title)
+	// 设置对话框的图标
+	dlg.SetIcon(Icons[Logo])
+	dlg.SetMinMaxSize(walk.Size{Width: w, Height: h}, walk.Size{Width: w, Height: h})
+	dlg.SetX(int(win.GetSystemMetrics(win.SM_CXSCREEN)/2 - int32(w)/2))
+	dlg.SetY(int(win.GetSystemMetrics(win.SM_CYSCREEN)/2 - int32(h)/2))
+	vboxLayout := walk.NewVBoxLayout()
+	vboxLayout.SetMargins(walk.Margins{HNear: 10, VNear: 10, HFar: 10, VFar: 10})
 
-	checkPrefs := curPrefs.Clone()
-	checkPrefs.ApplyEdits(maskedPrefs)
-	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
-		return err
+	brusher, err := walk.NewSolidColorBrush(walk.RGB(250, 250, 250))
+	if err != nil {
+		log.Printf("[工具人] 创建画刷出错: %v", err)
 	}
+	dlg.SetBackground(brusher)
+	dlg.SetLayout(vboxLayout)
 
-	_, err = LC.EditPrefs(ctx, maskedPrefs)
-	return err
+	label, err := walk.NewTextLabel(dlg)
+	if err != nil {
+		log.Printf("[工具人] 创建标签出错: %v", err)
+	}
+	label.SetText(msg)
+	label.SetAlignment(walk.AlignHCenterVCenter)
+	label.SetMinMaxSize(walk.Size{Width: w - 20, Height: h - 50}, walk.Size{Width: w - 20, Height: h - 50})
+	font, err := walk.NewFont("微软雅黑", 9, 0)
+	if err != nil {
+		log.Printf("[工具人] 创建字体出错: %v", err)
+	}
+	label.SetFont(font)
+
+	// 创建按钮
+	btns, err := walk.NewComposite(dlg)
+	if err != nil {
+		log.Printf("[工具人] 创建按钮组合框出错: %v", err)
+	}
+	btns.SetLayout(walk.NewHBoxLayout())
+
+	// 创建确认按钮
+	confirmBtn, err := walk.NewPushButton(btns)
+	if err != nil {
+		log.Printf("[工具人] 创建确认按钮出错: %v", err)
+	}
+	confirmBtn.SetText("确认")
+
+	// 创建取消按钮
+	cancelBtn, err := walk.NewPushButton(btns)
+	if err != nil {
+		log.Printf("[工具人] 创建取消按钮出错: %v", err)
+	}
+	cancelBtn.SetText("取消")
+
+	// 确认按钮点击事件
+	confirmBtn.Clicked().Attach(func() {
+		confirm = true
+		dlg.Accept()
+	})
+
+	// 取消按钮点击事件
+	cancelBtn.Clicked().Attach(func() {
+		dlg.Cancel()
+	})
+
+	// 显示对话框
+	dlg.Run()
+	return
 }
 
-func switchSubnetOpt(newV bool) error {
-	maskedPrefs := &ipn.MaskedPrefs{
-		Prefs: ipn.Prefs{
-			RouteAll: newV,
-		},
-		RouteAllSet: true,
-	}
-	curPrefs, err := LC.GetPrefs(ctx)
+// popTextInputDlg 弹出文本输入框
+// title: 标题
+// label: 标签
+// confirm: 用户是否确认
+// value: 用户输入的值
+func PopTextInputDlg(title, inputtip string) (confirm bool, value string) {
+	dlg, err := walk.NewDialogWithFixedSize(nil)
 	if err != nil {
-		return err
+		log.Printf("[工具人] 创建对话框出错: %v", err)
 	}
+	dlg.SetName(title)
+	dlg.SetTitle(title)
+	// 设置对话框的图标
+	dlg.SetIcon(Icons[Logo])
+	dlg.SetMinMaxSize(walk.Size{Width: 300, Height: 100}, walk.Size{Width: 300, Height: 100})
+	dlg.SetX(int(win.GetSystemMetrics(win.SM_CXSCREEN)/2 - 150))
+	dlg.SetY(int(win.GetSystemMetrics(win.SM_CYSCREEN)/2 - 50))
+	dlg.SetLayout(walk.NewVBoxLayout())
 
-	checkPrefs := curPrefs.Clone()
-	checkPrefs.ApplyEdits(maskedPrefs)
-	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
-		return err
-	}
-
-	_, err = LC.EditPrefs(ctx, maskedPrefs)
-	return err
-}
-
-func switchExitNode(exitIP tailcfg.StableNodeID) error {
-	if gui.exitNodeMenu.RunExitNode.Checked() {
-		return errors.New("用作出口节点的设备不能选择使用其他出口节点")
-	}
-	maskedPrefs := &ipn.MaskedPrefs{
-		Prefs: ipn.Prefs{
-			ExitNodeID: exitIP,
-		},
-		ExitNodeIDSet: true,
-	}
-	curPrefs, err := LC.GetPrefs(ctx)
+	label, err := walk.NewTextLabel(dlg)
 	if err != nil {
-		return err
+		log.Printf("[工具人] 创建标签出错: %v", err)
 	}
-
-	checkPrefs := curPrefs.Clone()
-	checkPrefs.ApplyEdits(maskedPrefs)
-	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
-		return err
-	}
-
-	_, err = LC.EditPrefs(ctx, maskedPrefs)
-	return err
-}
-
-func switchAllowLocalNet(newV bool) error {
-	maskedPrefs := &ipn.MaskedPrefs{
-		Prefs: ipn.Prefs{
-			ExitNodeAllowLANAccess: newV,
-		},
-		ExitNodeAllowLANAccessSet: true,
-	}
-	curPrefs, err := LC.GetPrefs(ctx)
+	label.SetText(inputtip)
+	urlInput, err := walk.NewLineEdit(dlg)
 	if err != nil {
-		return err
+		log.Printf("[工具人] 创建输入框出错: %v", err)
 	}
 
-	checkPrefs := curPrefs.Clone()
-	checkPrefs.ApplyEdits(maskedPrefs)
-	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
-		return err
-	}
-
-	_, err = LC.EditPrefs(ctx, maskedPrefs)
-	return err
-}
-
-func turnonExitNode() error {
-	st, err := LC.Status(ctx)
+	composite, err := walk.NewComposite(dlg)
 	if err != nil {
-		return err
+		log.Printf("[工具人] 创建复合控件出错: %v", err)
 	}
-	if st.ExitNodeStatus != nil {
-		return errors.New("正在使用其他出口节点，不能用作出口节点")
-	}
-	routes := make([]netip.Prefix, 0)
-	routes = append(routes, tsaddr.AllIPv4(), tsaddr.AllIPv6())
-	maskedPrefs := &ipn.MaskedPrefs{
-		Prefs: ipn.Prefs{
-			AdvertiseRoutes: routes,
-		},
-		AdvertiseRoutesSet: true,
-	}
-	curPrefs, err := LC.GetPrefs(ctx)
+	composite.SetLayout(walk.NewHBoxLayout())
+
+	okBtn, err := walk.NewPushButton(composite)
 	if err != nil {
-		return err
+		log.Printf("创建按钮出错: %v", err)
 	}
-
-	checkPrefs := curPrefs.Clone()
-	checkPrefs.ApplyEdits(maskedPrefs)
-	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
-		return err
-	}
-
-	_, err = LC.EditPrefs(ctx, maskedPrefs)
-	return err
-}
-
-func turnoffExitNode() error {
-	routes := make([]netip.Prefix, 0)
-	maskedPrefs := &ipn.MaskedPrefs{
-		Prefs: ipn.Prefs{
-			AdvertiseRoutes: routes,
-		},
-		AdvertiseRoutesSet: true,
-	}
-	curPrefs, err := LC.GetPrefs(ctx)
+	okBtn.SetText("确定")
+	okBtn.Clicked().Attach(func() {
+		value = urlInput.Text()
+		dlg.Accept()
+	})
+	cancelBtn, err := walk.NewPushButton(composite)
 	if err != nil {
-		return err
+		log.Printf("[工具人] 创建按钮出错: %v", err)
 	}
+	cancelBtn.SetText("取消")
+	cancelBtn.Clicked().Attach(func() {
+		dlg.Cancel()
+	})
 
-	checkPrefs := curPrefs.Clone()
-	checkPrefs.ApplyEdits(maskedPrefs)
-	if err := LC.CheckPrefs(ctx, checkPrefs); err != nil {
-		return err
+	// 显示对话框
+	dlgrt := dlg.Run()
+	if dlgrt == walk.DlgCmdOK {
+		confirm = true
 	}
-
-	_, err = LC.EditPrefs(ctx, maskedPrefs)
-	return err
+	return
 }

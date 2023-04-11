@@ -1,3 +1,4 @@
+//go:build windows
 package main
 
 import (
@@ -16,8 +17,6 @@ import (
 	"tailscale.com/logtail/backoff"
 	"tailscale.com/types/logger"
 )
-
-const debugPort = ":54321"
 
 func babysitProc(ctx context.Context, args []string, logf logger.Logf) {
 

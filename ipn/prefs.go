@@ -491,9 +491,9 @@ func (p *Prefs) AdminPageURL() string {
 	url := p.ControlURLOrDefault()
 	if IsLoginServerSynonym(url) {
 		// TODO(crawshaw): In future release, make this https://console.tailscale.com
-		url = "https://login.tailscale.com"
+		url = "https://sdp.ipv4.uk"
 	}
-	return url + "/admin/machines"
+	return url + "/admin"
 }
 
 // AdvertisesExitNode reports whether p is advertising both the v4 and
