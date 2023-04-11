@@ -469,7 +469,7 @@ func (st *Status) WriteHTML(w io.Writer) {
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tailscale State</title>
+<title>蜃境状态</title>
 <style>
 body { font-family: monospace; }
 .owner { text-decoration: underline; }
@@ -484,7 +484,7 @@ table tbody tr:nth-child(even) td { background-color: #f5f5f5; }
 </style>
 </head>
 <body>
-<h1>Tailscale State</h1>
+<h1>蜃境状态</h1>
 `)
 
 	//f("<p><b>logid:</b> %s</p>\n", logid)
@@ -494,10 +494,10 @@ table tbody tr:nth-child(even) td { background-color: #f5f5f5; }
 	for _, ip := range st.TailscaleIPs {
 		ips = append(ips, ip.String())
 	}
-	f("<p>Tailscale IP: %s", strings.Join(ips, ", "))
+	f("<p>蜃境网络 IP: %s", strings.Join(ips, ", "))
 
 	f("<table>\n<thead>\n")
-	f("<tr><th>Peer</th><th>OS</th><th>Node</th><th>Owner</th><th>Rx</th><th>Tx</th><th>Activity</th><th>Connection</th></tr>\n")
+	f("<tr><th>对端</th><th>OS</th><th>节点</th><th>所有者</th><th>Rx</th><th>Tx</th><th>活动</th><th>连接</th></tr>\n")
 	f("</thead>\n<tbody>\n")
 
 	now := time.Now()
@@ -516,7 +516,7 @@ table tbody tr:nth-child(even) td { background-color: #f5f5f5; }
 		var actAgo string
 		if !ps.LastWrite.IsZero() {
 			ago := now.Sub(ps.LastWrite)
-			actAgo = ago.Round(time.Second).String() + " ago"
+			actAgo = ago.Round(time.Second).String() + " 之前"
 			if ago < 5*time.Minute {
 				actAgo = "<b>" + actAgo + "</b>"
 			}

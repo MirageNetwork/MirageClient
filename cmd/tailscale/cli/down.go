@@ -15,7 +15,7 @@ import (
 var downCmd = &ffcli.Command{
 	Name:       "down",
 	ShortUsage: "down",
-	ShortHelp:  "Disconnect from Tailscale",
+	ShortHelp:  "Disconnect from Mirage",
 
 	Exec:    runDown,
 	FlagSet: newDownFlagSet(),
@@ -37,7 +37,7 @@ func runDown(ctx context.Context, args []string) error {
 	}
 
 	if isSSHOverTailscale() {
-		if err := presentRiskToUser(riskLoseSSH, `You are connected over Tailscale; this action will disable Tailscale and result in your session disconnecting.`, downArgs.acceptedRisks); err != nil {
+		if err := presentRiskToUser(riskLoseSSH, `You are connected over Mirage; this action will disable Mirage and result in your session disconnecting.`, downArgs.acceptedRisks); err != nil {
 			return err
 		}
 	}
@@ -47,7 +47,7 @@ func runDown(ctx context.Context, args []string) error {
 		return fmt.Errorf("error fetching current status: %w", err)
 	}
 	if st.BackendState == "Stopped" {
-		fmt.Fprintf(Stderr, "Tailscale was already stopped.\n")
+		fmt.Fprintf(Stderr, "Mirage was already stopped.\n")
 		return nil
 	}
 	_, err = localClient.EditPrefs(ctx, &ipn.MaskedPrefs{

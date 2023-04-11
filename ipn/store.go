@@ -52,6 +52,9 @@ const (
 	// CurrentProfileStateKey is the key under which we store the current
 	// profile.
 	CurrentProfileStateKey = StateKey("_current-profile")
+
+	//cgao6: we set current server code to use different server easily
+	CurrentServerCodeKey = StateKey("_server-code")
 )
 
 // CurrentProfileID returns the StateKey that stores the

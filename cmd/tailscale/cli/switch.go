@@ -16,7 +16,7 @@ import (
 
 var switchCmd = &ffcli.Command{
 	Name:      "switch",
-	ShortHelp: "Switches to a different Tailscale account",
+	ShortHelp: "Switches to a different Mirage account",
 	FlagSet: func() *flag.FlagSet {
 		fs := flag.NewFlagSet("switch", flag.ExitOnError)
 		fs.BoolVar(&switchArgs.list, "list", false, "list available accounts")
@@ -28,8 +28,8 @@ var switchCmd = &ffcli.Command{
   switch <name>
   switch --list
 
-"tailscale switch" switches between logged in accounts.
-This command is currently in alpha and may change in the future.`
+"mirage switch" switches between logged in accounts.`
+		// This command is currently in alpha and may change in the future.`
 	},
 }
 
@@ -57,7 +57,7 @@ func switchProfile(ctx context.Context, args []string) error {
 		return listProfiles(ctx)
 	}
 	if len(args) != 1 {
-		outln("usage: tailscale switch NAME")
+		outln("usage: mirage switch NAME")
 		os.Exit(1)
 	}
 	cp, all, err := localClient.ProfileStatus(ctx)
@@ -106,7 +106,7 @@ func switchProfile(ctx context.Context, args []string) error {
 		case "NeedsLogin":
 			outln("Logged out.")
 			outln("To log in, run:")
-			outln("  tailscale up")
+			outln("  mirage up")
 			return nil
 		case "Running":
 			outln("Success.")

@@ -23,23 +23,23 @@ import (
 var pingCmd = &ffcli.Command{
 	Name:       "ping",
 	ShortUsage: "ping <hostname-or-IP>",
-	ShortHelp:  "Ping a host at the Tailscale layer, see how it routed",
+	ShortHelp:  "Ping a host at the Mirage layer, see how it routed",
 	LongHelp: strings.TrimSpace(`
 
-The 'tailscale ping' command pings a peer node from the Tailscale layer
+The 'mirage ping' command pings a peer node from the Mirage layer
 and reports which route it took for each response. The first ping or
-so will likely go over DERP (Tailscale's TCP relay protocol) while NAT
+so will likely go over DERP (Mirage's TCP relay protocol) while NAT
 traversal finds a direct path through.
 
-If 'tailscale ping' works but a normal ping does not, that means one
-side's operating system firewall is blocking packets; 'tailscale ping'
+If 'mirage ping' works but a normal ping does not, that means one
+side's operating system firewall is blocking packets; 'mirage ping'
 does not inject packets into either side's TUN devices.
 
-By default, 'tailscale ping' stops after 10 pings or once a direct
+By default, 'mirage ping' stops after 10 pings or once a direct
 (non-DERP) path has been established, whichever comes first.
 
-The provided hostname must resolve to or be a Tailscale IP
-(e.g. 100.x.y.z) or a subnet IP advertised by a Tailscale
+The provided hostname must resolve to or be a Mirage IP
+(e.g. 100.x.y.z) or a subnet IP advertised by a Mirage
 relay node.
 
 `),
@@ -102,7 +102,7 @@ func runPing(ctx context.Context, args []string) error {
 		return err
 	}
 	if self {
-		printf("%v is local Tailscale IP\n", ip)
+		printf("%v is local Mirage IP\n", ip)
 		return nil
 	}
 

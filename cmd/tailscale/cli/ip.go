@@ -17,8 +17,8 @@ import (
 var ipCmd = &ffcli.Command{
 	Name:       "ip",
 	ShortUsage: "ip [-1] [-4] [-6] [peer hostname or ip address]",
-	ShortHelp:  "Show Tailscale IP addresses",
-	LongHelp:   "Show Tailscale IP addresses for peer. Peer defaults to the current machine.",
+	ShortHelp:  "Show Mirage IP addresses",
+	LongHelp:   "Show Mirage IP addresses for peer. Peer defaults to the current machine.",
 	Exec:       runIP,
 	FlagSet: (func() *flag.FlagSet {
 		fs := newFlagSet("ip")
@@ -52,7 +52,7 @@ func runIP(ctx context.Context, args []string) error {
 		}
 	}
 	if nflags > 1 {
-		return errors.New("tailscale ip -1, -4, and -6 are mutually exclusive")
+		return errors.New("mirage ip -1, -4, and -6 are mutually exclusive")
 	}
 	if !v4 && !v6 {
 		v4, v6 = true, true
@@ -74,7 +74,7 @@ func runIP(ctx context.Context, args []string) error {
 		ips = peer.TailscaleIPs
 	}
 	if len(ips) == 0 {
-		return fmt.Errorf("no current Tailscale IPs; state: %v", st.BackendState)
+		return fmt.Errorf("no current Mirage IPs; state: %v", st.BackendState)
 	}
 
 	if ipArgs.want1 {
@@ -89,10 +89,10 @@ func runIP(ctx context.Context, args []string) error {
 	}
 	if !match {
 		if ipArgs.want4 {
-			return errors.New("no Tailscale IPv4 address")
+			return errors.New("no Mirage IPv4 address")
 		}
 		if ipArgs.want6 {
-			return errors.New("no Tailscale IPv6 address")
+			return errors.New("no Mirage IPv6 address")
 		}
 	}
 	return nil

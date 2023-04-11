@@ -365,7 +365,7 @@ func (r *linuxRouter) onIPRuleDeleted(table uint8, priority uint32) {
 	}
 	time.AfterFunc(rr.Delay()+250*time.Millisecond, func() {
 		if r.ruleRestorePending.Swap(false) && !r.closed.Load() {
-			r.logf("somebody (likely systemd-networkd) deleted ip rules; restoring Tailscale's")
+			r.logf("somebody (likely systemd-networkd) deleted ip rules; restoring Mirage's")
 			r.justAddIPRules()
 		}
 	})

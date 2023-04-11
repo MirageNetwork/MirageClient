@@ -77,36 +77,42 @@ var handler = map[string]localAPIHandler{
 	"debug-log":                   (*Handler).serveDebugLog,
 	"derpmap":                     (*Handler).serveDERPMap,
 	"dev-set-state-store":         (*Handler).serveDevSetStateStore,
-	"set-push-device-token":       (*Handler).serveSetPushDeviceToken,
-	"dial":                        (*Handler).serveDial,
-	"file-targets":                (*Handler).serveFileTargets,
-	"goroutines":                  (*Handler).serveGoroutines,
-	"id-token":                    (*Handler).serveIDToken,
-	"login-interactive":           (*Handler).serveLoginInteractive,
-	"logout":                      (*Handler).serveLogout,
-	"logtap":                      (*Handler).serveLogTap,
-	"metrics":                     (*Handler).serveMetrics,
-	"ping":                        (*Handler).servePing,
-	"prefs":                       (*Handler).servePrefs,
-	"pprof":                       (*Handler).servePprof,
-	"reset-auth":                  (*Handler).serveResetAuth,
-	"serve-config":                (*Handler).serveServeConfig,
-	"set-dns":                     (*Handler).serveSetDNS,
-	"set-expiry-sooner":           (*Handler).serveSetExpirySooner,
-	"start":                       (*Handler).serveStart,
-	"status":                      (*Handler).serveStatus,
-	"tka/init":                    (*Handler).serveTKAInit,
-	"tka/log":                     (*Handler).serveTKALog,
-	"tka/modify":                  (*Handler).serveTKAModify,
-	"tka/sign":                    (*Handler).serveTKASign,
-	"tka/status":                  (*Handler).serveTKAStatus,
-	"tka/disable":                 (*Handler).serveTKADisable,
-	"tka/force-local-disable":     (*Handler).serveTKALocalDisable,
-	"tka/affected-sigs":           (*Handler).serveTKAAffectedSigs,
-	"tka/wrap-preauth-key":        (*Handler).serveTKAWrapPreauthKey,
-	"upload-client-metrics":       (*Handler).serveUploadClientMetrics,
-	"watch-ipn-bus":               (*Handler).serveWatchIPNBus,
-	"whois":                       (*Handler).serveWhoIs,
+
+	// cgao6: 这个很有用，但官方说不稳定，让我们把它固定下来
+	"set-state-store": (*Handler).serveSetStateStore,
+	// cgao6: 我们甚至还要加个读取用的
+	"get-state-store": (*Handler).serveGetStateStore,
+
+	"set-push-device-token":   (*Handler).serveSetPushDeviceToken,
+	"dial":                    (*Handler).serveDial,
+	"file-targets":            (*Handler).serveFileTargets,
+	"goroutines":              (*Handler).serveGoroutines,
+	"id-token":                (*Handler).serveIDToken,
+	"login-interactive":       (*Handler).serveLoginInteractive,
+	"logout":                  (*Handler).serveLogout,
+	"logtap":                  (*Handler).serveLogTap,
+	"metrics":                 (*Handler).serveMetrics,
+	"ping":                    (*Handler).servePing,
+	"prefs":                   (*Handler).servePrefs,
+	"pprof":                   (*Handler).servePprof,
+	"reset-auth":              (*Handler).serveResetAuth,
+	"serve-config":            (*Handler).serveServeConfig,
+	"set-dns":                 (*Handler).serveSetDNS,
+	"set-expiry-sooner":       (*Handler).serveSetExpirySooner,
+	"start":                   (*Handler).serveStart,
+	"status":                  (*Handler).serveStatus,
+	"tka/init":                (*Handler).serveTKAInit,
+	"tka/log":                 (*Handler).serveTKALog,
+	"tka/modify":              (*Handler).serveTKAModify,
+	"tka/sign":                (*Handler).serveTKASign,
+	"tka/status":              (*Handler).serveTKAStatus,
+	"tka/disable":             (*Handler).serveTKADisable,
+	"tka/force-local-disable": (*Handler).serveTKALocalDisable,
+	"tka/affected-sigs":       (*Handler).serveTKAAffectedSigs,
+	"tka/wrap-preauth-key":    (*Handler).serveTKAWrapPreauthKey,
+	"upload-client-metrics":   (*Handler).serveUploadClientMetrics,
+	"watch-ipn-bus":           (*Handler).serveWatchIPNBus,
+	"whois":                   (*Handler).serveWhoIs,
 }
 
 func randHex(n int) string {
@@ -163,8 +169,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid localapi request", http.StatusForbidden)
 		return
 	}
-	w.Header().Set("Tailscale-Version", version.Long())
-	w.Header().Set("Tailscale-Cap", strconv.Itoa(int(tailcfg.CurrentCapabilityVersion)))
+	w.Header().Set("Mirage-Version", version.Long())
+	w.Header().Set("Mirage-Cap", strconv.Itoa(int(tailcfg.CurrentCapabilityVersion)))
 	w.Header().Set("Content-Security-Policy", `default-src 'none'; frame-ancestors 'none'; script-src 'none'; script-src-elem 'none'; script-src-attr 'none'`)
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -572,6 +578,43 @@ func (h *Handler) serveDevSetStateStore(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	io.WriteString(w, "done\n")
+}
+
+// cgao6: 这个是把官方dev设置store的接口固定下来，以便我们使用
+func (h *Handler) serveSetStateStore(w http.ResponseWriter, r *http.Request) {
+	if !h.PermitWrite {
+		http.Error(w, "debug access denied", http.StatusForbidden)
+		return
+	}
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := h.b.SetStateStore(r.FormValue("key"), r.FormValue("value")); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain")
+	io.WriteString(w, "done\n")
+}
+
+// cgao6: 然后再对应来个读取的接口
+func (h *Handler) serveGetStateStore(w http.ResponseWriter, r *http.Request) {
+	if !h.PermitWrite {
+		http.Error(w, "debug access denied", http.StatusForbidden)
+		return
+	}
+	if r.Method != "GET" {
+		http.Error(w, "GET required", http.StatusMethodNotAllowed)
+		return
+	}
+	value, err := h.b.GetStateStore(r.FormValue("key"))
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write(value)
 }
 
 func (h *Handler) serveDebugPacketFilterRules(w http.ResponseWriter, r *http.Request) {

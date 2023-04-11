@@ -445,7 +445,7 @@ func (c *Direct) doLogin(ctx context.Context, opt loginOpt) (mustRegen bool, new
 	} else {
 		if expired {
 			c.logf("Old key expired -> regen=true")
-			systemd.Status("key expired; run 'tailscale up' to authenticate")
+			systemd.Status("key expired; run 'mirage up' to authenticate")
 			regen = true
 		}
 		if (opt.Flags & LoginInteractive) != 0 {

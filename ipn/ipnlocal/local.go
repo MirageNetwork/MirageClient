@@ -660,9 +660,10 @@ func (b *LocalBackend) updateStatus(sb *ipnstate.StatusBuilder, extraLocked func
 		if m := b.sshOnButUnusableHealthCheckMessageLocked(); m != "" {
 			s.Health = append(s.Health, m)
 		}
+		/* cgao6: we are unstable, so pls dont check this
 		if version.IsUnstableBuild() {
 			s.Health = append(s.Health, "This is an unstable (development) version of Tailscale; frequent updates and bugs are likely")
-		}
+		} */
 		if b.netMap != nil {
 			s.CertDomains = append([]string(nil), b.netMap.DNS.CertDomains...)
 			s.MagicDNSSuffix = b.netMap.MagicDNSSuffix()
@@ -1051,7 +1052,7 @@ func (b *LocalBackend) setClientStatus(st controlclient.Status) {
 
 	if st.NetMap != nil {
 		if envknob.NoLogsNoSupport() && hasCapability(st.NetMap, tailcfg.CapabilityDataPlaneAuditLogs) {
-			msg := "tailnet requires logging to be enabled. Remove --no-logs-no-support from tailscaled command line."
+			msg := "miragenet requires logging to be enabled. Remove --no-logs-no-support from miraged command line."
 			health.SetLocalLogConfigHealth(errors.New(msg))
 			// Connecting to this tailnet without logging is forbidden; boot us outta here.
 			b.mu.Lock()
@@ -2336,7 +2337,7 @@ func (b *LocalBackend) CheckIPNConnectionAllowed(ci *ipnauth.ConnIdentity) error
 		return errors.New("empty user uid in connection identity")
 	}
 	if uid != serverModeUid {
-		return fmt.Errorf("Tailscale running in server mode (%q); connection from %q not allowed", b.tryLookupUserName(string(serverModeUid)), b.tryLookupUserName(string(uid)))
+		return fmt.Errorf("Mirage running in server mode (%q); connection from %q not allowed", b.tryLookupUserName(string(serverModeUid)), b.tryLookupUserName(string(uid)))
 	}
 	return nil
 }
@@ -2428,7 +2429,7 @@ func (b *LocalBackend) pingPeerAPI(ctx context.Context, ip netip.Addr) (peer *ta
 	}
 	peer, ok := nm.PeerByTailscaleIP(ip)
 	if !ok {
-		return nil, "", fmt.Errorf("no peer found with Tailscale IP %v", ip)
+		return nil, "", fmt.Errorf("no peer found with Mirage IP %v", ip)
 	}
 	if peer.Expired {
 		return nil, "", errors.New("peer's node key has expired")
@@ -2536,7 +2537,7 @@ func (b *LocalBackend) CheckPrefs(p *ipn.Prefs) error {
 
 func (b *LocalBackend) checkPrefsLocked(p *ipn.Prefs) error {
 	var errs []error
-	if p.Hostname == "badhostname.tailscale." {
+	if p.Hostname == "badhostname.mirage." {
 		// Keep this one just for testing.
 		errs = append(errs, errors.New("bad hostname [test]"))
 	}
@@ -2562,24 +2563,24 @@ func (b *LocalBackend) checkSSHPrefsLocked(p *ipn.Prefs) error {
 	switch runtime.GOOS {
 	case "linux":
 		if distro.Get() == distro.Synology && !envknob.UseWIPCode() {
-			return errors.New("The Tailscale SSH server does not run on Synology.")
+			return errors.New("The Mirage SSH server does not run on Synology.")
 		}
 		if distro.Get() == distro.QNAP && !envknob.UseWIPCode() {
-			return errors.New("The Tailscale SSH server does not run on QNAP.")
+			return errors.New("The Mirage SSH server does not run on QNAP.")
 		}
 		checkSELinux()
 		// otherwise okay
 	case "darwin":
 		// okay only in tailscaled mode for now.
 		if version.IsSandboxedMacOS() {
-			return errors.New("The Tailscale SSH server does not run in sandboxed Tailscale GUI builds.")
+			return errors.New("The Mirage SSH server does not run in sandboxed Mirage GUI builds.")
 		}
 	case "freebsd", "openbsd":
 	default:
-		return errors.New("The Tailscale SSH server is not supported on " + runtime.GOOS)
+		return errors.New("The Mirage SSH server is not supported on " + runtime.GOOS)
 	}
 	if !envknob.CanSSHD() {
-		return errors.New("The Tailscale SSH server has been administratively disabled.")
+		return errors.New("The Mirage SSH server has been administratively disabled.")
 	}
 	if envknob.SSHIgnoreTailnetPolicy() || envknob.SSHPolicyFile() != "" {
 		return nil
@@ -2587,9 +2588,9 @@ func (b *LocalBackend) checkSSHPrefsLocked(p *ipn.Prefs) error {
 	if b.netMap != nil {
 		if !hasCapability(b.netMap, tailcfg.CapabilitySSH) {
 			if b.isDefaultServerLocked() {
-				return errors.New("Unable to enable local Tailscale SSH server; not enabled on Tailnet. See https://tailscale.com/s/ssh")
+				return errors.New("Unable to enable local Mirage SSH server; not enabled on Miragenet. ")
 			}
-			return errors.New("Unable to enable local Tailscale SSH server; not enabled on Tailnet.")
+			return errors.New("Unable to enable local Mirage SSH server; not enabled on Miragenet.")
 		}
 	}
 	return nil
@@ -2613,12 +2614,12 @@ func (b *LocalBackend) sshOnButUnusableHealthCheckMessageLocked() (healthMessage
 	isAdmin := hasCapability(nm, tailcfg.CapabilityAdmin)
 
 	if !isAdmin {
-		return healthmsg.TailscaleSSHOnBut + "access controls don't allow anyone to access this device. Ask your admin to update your tailnet's ACLs to allow access."
+		return healthmsg.TailscaleSSHOnBut + "access controls don't allow anyone to access this device. Ask your admin to update your miragenet's ACLs to allow access."
 	}
 	if !isDefault {
-		return healthmsg.TailscaleSSHOnBut + "access controls don't allow anyone to access this device. Update your tailnet's ACLs to allow access."
+		return healthmsg.TailscaleSSHOnBut + "access controls don't allow anyone to access this device. Update your miragenet's ACLs to allow access."
 	}
-	return healthmsg.TailscaleSSHOnBut + "access controls don't allow anyone to access this device. Update your tailnet's ACLs at https://tailscale.com/s/ssh-policy"
+	return healthmsg.TailscaleSSHOnBut + "access controls don't allow anyone to access this device." // Update your tailnet's ACLs at https://tailscale.com/s/ssh-policy"
 }
 
 func (b *LocalBackend) isDefaultServerLocked() bool {
@@ -2661,7 +2662,7 @@ func (b *LocalBackend) EditPrefs(mp *ipn.MaskedPrefs) (ipn.PrefsView, error) {
 	if p1.RunSSH && !envknob.CanSSHD() {
 		b.mu.Unlock()
 		b.logf("EditPrefs requests SSH, but disabled by envknob; returning error")
-		return ipn.PrefsView{}, errors.New("Tailscale SSH server administratively disabled.")
+		return ipn.PrefsView{}, errors.New("Mirage SSH server administratively disabled.")
 	}
 	if p1.View().Equals(p0) {
 		b.mu.Unlock()
@@ -3602,7 +3603,7 @@ func (b *LocalBackend) enterStateLockedOnEntry(newState ipn.State) {
 		}
 
 		if authURL == "" {
-			systemd.Status("Stopped; run 'tailscale up' to log in")
+			systemd.Status("Stopped; run 'mirage up' to log in")
 		}
 	case ipn.Starting, ipn.NeedsMachineAuth:
 		b.authReconfig()
@@ -4226,10 +4227,10 @@ func (b *LocalBackend) FileTargets() ([]*apitype.FileTarget, error) {
 	defer b.mu.Unlock()
 	nm := b.netMap
 	if b.state != ipn.Running || nm == nil {
-		return nil, errors.New("not connected to the tailnet")
+		return nil, errors.New("not connected to the miragenet")
 	}
 	if !b.capFileSharing {
-		return nil, errors.New("file sharing not enabled by Tailscale admin")
+		return nil, errors.New("file sharing not enabled by Mirage admin")
 	}
 	for _, p := range nm.Peers {
 		if !b.peerIsTaildropTargetLocked(p) {
@@ -4649,7 +4650,7 @@ func checkSELinux() {
 	}
 	out, _ := exec.Command("getenforce").Output()
 	if string(bytes.TrimSpace(out)) == "Enforcing" {
-		warnSSHSELinux.Set(errors.New("SELinux is enabled; Tailscale SSH may not work. See https://tailscale.com/s/ssh-selinux"))
+		warnSSHSELinux.Set(errors.New("SELinux is enabled; Mirage SSH may not work.")) // See https://tailscale.com/s/ssh-selinux"))
 	} else {
 		warnSSHSELinux.Set(nil)
 	}
@@ -4698,7 +4699,7 @@ func (b *LocalBackend) handleQuad100Port80Conn(w http.ResponseWriter, r *http.Re
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	io.WriteString(w, "<h1>Tailscale</h1>\n")
+	io.WriteString(w, "<h1>蜃境</h1>\n")
 	if b.netMap == nil {
 		io.WriteString(w, "No netmap.\n")
 		return
@@ -4741,13 +4742,13 @@ func (b *LocalBackend) Doctor(ctx context.Context, logf logger.Logf) {
 		for i, resolver := range nm.DNS.Resolvers {
 			ipp, ok := resolver.IPPort()
 			if ok && tsaddr.IsTailscaleIP(ipp.Addr()) {
-				logf("resolver %d is a Tailscale address: %v", i, resolver)
+				logf("resolver %d is a Mirage address: %v", i, resolver)
 			}
 		}
 		for i, resolver := range nm.DNS.FallbackResolvers {
 			ipp, ok := resolver.IPPort()
 			if ok && tsaddr.IsTailscaleIP(ipp.Addr()) {
-				logf("fallback resolver %d is a Tailscale address: %v", i, resolver)
+				logf("fallback resolver %d is a Mirage address: %v", i, resolver)
 			}
 		}
 		return nil
@@ -4783,6 +4784,39 @@ func (b *LocalBackend) SetDevStateStore(key, value string) error {
 	b.setTCPPortsInterceptedFromNetmapAndPrefsLocked(b.pm.CurrentPrefs())
 
 	return nil
+}
+
+// cgao6: 我们从官方版本做一个固定的接口出来
+func (b *LocalBackend) SetStateStore(key, value string) error {
+	if b.store == nil {
+		return errors.New("no state store")
+	}
+	err := b.store.WriteState(ipn.StateKey(key), []byte(value))
+	b.logf("SetStateStore(%q, %q) = %v", key, value, err)
+
+	if err != nil {
+		return err
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.setTCPPortsInterceptedFromNetmapAndPrefsLocked(b.pm.CurrentPrefs())
+
+	return nil
+}
+
+// cgao6: 再尝试做一个读版本
+func (b *LocalBackend) GetStateStore(key string) ([]byte, error) {
+	if b.store == nil {
+		return nil, errors.New("no state store")
+	}
+	value, err := b.store.ReadState(ipn.StateKey(key))
+	b.logf("GetStateStore(%q, %q) = %v", key, string(value), err)
+
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 // ShouldInterceptTCPPort reports whether the given TCP port number to a

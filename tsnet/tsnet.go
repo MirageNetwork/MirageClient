@@ -571,7 +571,7 @@ func (s *Server) start() (reterr error) {
 
 	// Create an in-process listener.
 	// nettest.Listen provides a in-memory pipe based implementation for net.Conn.
-	lal := memnet.Listen("local-tailscaled.sock:80")
+	lal := memnet.Listen("local-miraged.sock:80")
 	s.localAPIListener = lal
 	s.localClient = &tailscale.LocalClient{Dial: lal.Dial}
 	s.localAPIServer = &http.Server{Handler: lah}

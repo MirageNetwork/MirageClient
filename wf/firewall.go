@@ -89,7 +89,7 @@ type Firewall struct {
 // New returns a new Firewall for the provided interface ID.
 func New(luid uint64) (*Firewall, error) {
 	session, err := wf.New(&wf.Options{
-		Name:    "Tailscale firewall",
+		Name:    "Mirage firewall",
 		Dynamic: true,
 	})
 	if err != nil {
@@ -102,7 +102,7 @@ func New(luid uint64) (*Firewall, error) {
 	providerID := wf.ProviderID(wguid)
 	if err := session.AddProvider(&wf.Provider{
 		ID:   providerID,
-		Name: "Tailscale provider",
+		Name: "Mirage provider",
 	}); err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func New(luid uint64) (*Firewall, error) {
 	sublayerID := wf.SublayerID(wguid)
 	if err := session.AddSublayer(&wf.Sublayer{
 		ID:     sublayerID,
-		Name:   "Tailscale permissive and blocking filters",
+		Name:   "Mirage permissive and blocking filters",
 		Weight: 0,
 	}); err != nil {
 		return nil, err
@@ -141,7 +141,7 @@ const (
 
 func (f *Firewall) enable() error {
 	if err := f.permitTailscaleService(weightTailscaleTraffic); err != nil {
-		return fmt.Errorf("permitTailscaleService failed: %w", err)
+		return fmt.Errorf("permitMirageService failed: %w", err)
 	}
 
 	if err := f.permitTunInterface(weightTailscaleTraffic); err != nil {
@@ -505,6 +505,6 @@ func (f *Firewall) permitTailscaleService(w weight) error {
 			Value: appID,
 		},
 	}
-	_, err = f.addRules("unrestricted traffic for Tailscale service", w, conditions, wf.ActionPermit, protocolAll, directionBoth)
+	_, err = f.addRules("unrestricted traffic for Mirage service", w, conditions, wf.ActionPermit, protocolAll, directionBoth)
 	return err
 }

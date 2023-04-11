@@ -29,22 +29,22 @@ import (
 var statusCmd = &ffcli.Command{
 	Name:       "status",
 	ShortUsage: "status [--active] [--web] [--json]",
-	ShortHelp:  "Show state of tailscaled and its connections",
+	ShortHelp:  "Show state of miraged and its connections",
 	LongHelp: strings.TrimSpace(`
 
 JSON FORMAT
-
-Warning: this format has changed between releases and might change more
-in the future.
-
-For a description of the fields, see the "type Status" declaration at:
-
-https://github.com/tailscale/tailscale/blob/main/ipn/ipnstate/ipnstate.go
-
-(and be sure to select branch/tag that corresponds to the version
- of Tailscale you're running)
-
 `),
+	// Warning: this format has changed between releases and might change more
+	// in the future.
+
+	// For a description of the fields, see the "type Status" declaration at:
+
+	// https://github.com/tailscale/tailscale/blob/main/ipn/ipnstate/ipnstate.go
+
+	// (and be sure to select branch/tag that corresponds to the version
+	//  of Mirage you're running)
+
+	// `),
 	Exec: runStatus,
 	FlagSet: (func() *flag.FlagSet {
 		fs := newFlagSet("status")
@@ -71,7 +71,7 @@ var statusArgs struct {
 
 func runStatus(ctx context.Context, args []string) error {
 	if len(args) > 0 {
-		return errors.New("unexpected non-flag arguments to 'tailscale status'")
+		return errors.New("unexpected non-flag arguments to 'mirage status'")
 	}
 	getStatus := localClient.Status
 	if !statusArgs.peers {
@@ -93,6 +93,11 @@ func runStatus(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		jstr := string(j)
+		jstr = strings.ReplaceAll(jstr, "Tailscale", "Mirage")
+		jstr = strings.ReplaceAll(jstr, "https://tailscale.com/cap/", "")
+		jstr = strings.ReplaceAll(jstr, "Tailnet", "MirageNet")
+		j = []byte(jstr)
 		printf("%s", j)
 		return nil
 	}
@@ -102,7 +107,7 @@ func runStatus(ctx context.Context, args []string) error {
 			return err
 		}
 		statusURL := interfaces.HTTPOfListener(ln)
-		printf("Serving Tailscale status at %v ...\n", statusURL)
+		printf("Serving Mirage status at %v ...\n", statusURL)
 		go func() {
 			<-ctx.Done()
 			ln.Close()
@@ -268,7 +273,7 @@ func isRunningOrStarting(st *ipnstate.Status) (description string, ok bool) {
 	default:
 		return fmt.Sprintf("unexpected state: %s", st.BackendState), false
 	case ipn.Stopped.String():
-		return "Tailscale is stopped.", false
+		return "Mirage is stopped.", false
 	case ipn.NeedsLogin.String():
 		s := "Logged out."
 		if st.AuthURL != "" {
@@ -276,7 +281,7 @@ func isRunningOrStarting(st *ipnstate.Status) (description string, ok bool) {
 		}
 		return s, false
 	case ipn.NeedsMachineAuth.String():
-		return "Machine is not yet approved by tailnet admin.", false
+		return "Machine is not yet approved by miragenet admin.", false
 	case ipn.Running.String(), ipn.Starting.String():
 		return st.BackendState, true
 	}

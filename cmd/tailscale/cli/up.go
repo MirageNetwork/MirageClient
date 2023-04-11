@@ -42,14 +42,14 @@ import (
 var upCmd = &ffcli.Command{
 	Name:       "up",
 	ShortUsage: "up [flags]",
-	ShortHelp:  "Connect to Tailscale, logging in if needed",
+	ShortHelp:  "Connect to Mirage, logging in if needed",
 
 	LongHelp: strings.TrimSpace(`
-"tailscale up" connects this machine to your Tailscale network,
+"mirage up" connects this machine to your Mirage network,
 triggering authentication if necessary.
 
-With no flags, "tailscale up" brings the network online without
-changing any settings. (That is, it's the opposite of "tailscale
+With no flags, "mirage up" brings the network online without
+changing any settings. (That is, it's the opposite of "mirage
 down").
 
 If flags are specified, the flags must be the complete set of desired
@@ -100,28 +100,28 @@ func newUpFlagSet(goos string, upArgs *upArgsT, cmd string) *flag.FlagSet {
 	upf.StringVar(&upArgs.authKeyOrFile, "auth-key", "", `node authorization key; if it begins with "file:", then it's a path to a file containing the authkey`)
 
 	upf.StringVar(&upArgs.server, "login-server", ipn.DefaultControlURL, "base URL of control server")
-	upf.BoolVar(&upArgs.acceptRoutes, "accept-routes", acceptRouteDefault(goos), "accept routes advertised by other Tailscale nodes")
+	upf.BoolVar(&upArgs.acceptRoutes, "accept-routes", acceptRouteDefault(goos), "accept routes advertised by other Mirage nodes")
 	upf.BoolVar(&upArgs.acceptDNS, "accept-dns", true, "accept DNS configuration from the admin panel")
-	upf.BoolVar(&upArgs.singleRoutes, "host-routes", true, "HIDDEN: install host routes to other Tailscale nodes")
-	upf.StringVar(&upArgs.exitNodeIP, "exit-node", "", "Tailscale exit node (IP or base name) for internet traffic, or empty string to not use an exit node")
+	upf.BoolVar(&upArgs.singleRoutes, "host-routes", true, "HIDDEN: install host routes to other Mirage nodes")
+	upf.StringVar(&upArgs.exitNodeIP, "exit-node", "", "Mirage exit node (IP or base name) for internet traffic, or empty string to not use an exit node")
 	upf.BoolVar(&upArgs.exitNodeAllowLANAccess, "exit-node-allow-lan-access", false, "Allow direct access to the local network when routing traffic via an exit node")
 	upf.BoolVar(&upArgs.shieldsUp, "shields-up", false, "don't allow incoming connections")
-	upf.BoolVar(&upArgs.runSSH, "ssh", false, "run an SSH server, permitting access per tailnet admin's declared policy")
+	upf.BoolVar(&upArgs.runSSH, "ssh", false, "run an SSH server, permitting access per miragenet admin's declared policy")
 	upf.StringVar(&upArgs.advertiseTags, "advertise-tags", "", "comma-separated ACL tags to request; each must start with \"tag:\" (e.g. \"tag:eng,tag:montreal,tag:ssh\")")
 	upf.StringVar(&upArgs.hostname, "hostname", "", "hostname to use instead of the one provided by the OS")
 	upf.StringVar(&upArgs.advertiseRoutes, "advertise-routes", "", "routes to advertise to other nodes (comma-separated, e.g. \"10.0.0.0/8,192.168.0.0/24\") or empty string to not advertise routes")
-	upf.BoolVar(&upArgs.advertiseDefaultRoute, "advertise-exit-node", false, "offer to be an exit node for internet traffic for the tailnet")
+	upf.BoolVar(&upArgs.advertiseDefaultRoute, "advertise-exit-node", false, "offer to be an exit node for internet traffic for the miragenet")
 	if safesocket.GOOSUsesPeerCreds(goos) {
-		upf.StringVar(&upArgs.opUser, "operator", "", "Unix username to allow to operate on tailscaled without sudo")
+		upf.StringVar(&upArgs.opUser, "operator", "", "Unix username to allow to operate on miraged without sudo")
 	}
 	switch goos {
 	case "linux":
 		upf.BoolVar(&upArgs.snat, "snat-subnet-routes", true, "source NAT traffic to local routes advertised with --advertise-routes")
 		upf.StringVar(&upArgs.netfilterMode, "netfilter-mode", defaultNetfilterMode(), "netfilter mode (one of on, nodivert, off)")
 	case "windows":
-		upf.BoolVar(&upArgs.forceDaemon, "unattended", false, "run in \"Unattended Mode\" where Tailscale keeps running even after the current GUI user logs out (Windows-only)")
+		upf.BoolVar(&upArgs.forceDaemon, "unattended", false, "run in \"Unattended Mode\" where Mirage keeps running even after the current GUI user logs out (Windows-only)")
 	}
-	upf.DurationVar(&upArgs.timeout, "timeout", 0, "maximum amount of time to wait for tailscaled to enter a Running state; default (0s) blocks forever")
+	upf.DurationVar(&upArgs.timeout, "timeout", 0, "maximum amount of time to wait for miraged to enter a Running state; default (0s) blocks forever")
 
 	if cmd == "login" {
 		upf.StringVar(&upArgs.profileName, "nickname", "", "short name for the account")
@@ -450,9 +450,9 @@ func presentSSHToggleRisk(wantSSH, haveSSH bool, acceptedRisks string) error {
 		return nil
 	}
 	if wantSSH {
-		return presentRiskToUser(riskLoseSSH, `You are connected over Tailscale; this action will reroute SSH traffic to Tailscale SSH and will result in your session disconnecting.`, acceptedRisks)
+		return presentRiskToUser(riskLoseSSH, `You are connected over Mirage; this action will reroute SSH traffic to Mirage SSH and will result in your session disconnecting.`, acceptedRisks)
 	}
-	return presentRiskToUser(riskLoseSSH, `You are connected using Tailscale SSH; this action will result in your session disconnecting.`, acceptedRisks)
+	return presentRiskToUser(riskLoseSSH, `You are connected using Mirage SSH; this action will result in your session disconnecting.`, acceptedRisks)
 }
 
 func runUp(ctx context.Context, cmd string, args []string, upArgs upArgsT) (retErr error) {
@@ -487,7 +487,7 @@ func runUp(ctx context.Context, cmd string, args []string, upArgs upArgsT) (retE
 	}
 
 	if distro.Get() == distro.Synology {
-		notSupported := "not supported on Synology; see https://github.com/tailscale/tailscale/issues/1995"
+		notSupported := "not supported on Synology" //; see https://github.com/tailscale/tailscale/issues/1995"
 		if upArgs.acceptRoutes {
 			return errors.New("--accept-routes is " + notSupported)
 		}
@@ -705,7 +705,7 @@ func runUp(ctx context.Context, cmd string, args []string, upArgs upArgsT) (retE
 		}
 		return err
 	case <-timeoutCh:
-		return errors.New(`timeout waiting for Tailscale service to enter a Running state; check health with "tailscale status"`)
+		return errors.New(`timeout waiting for Mirage service to enter a Running state; check health with "mirage status"`)
 	}
 }
 
@@ -818,11 +818,11 @@ func updateMaskedPrefsFromUpOrSetFlag(mp *ipn.MaskedPrefs, flagName string) {
 	panic(fmt.Sprintf("internal error: unhandled flag %q", flagName))
 }
 
-const accidentalUpPrefix = "Error: changing settings via 'tailscale up' requires mentioning all\n" +
+const accidentalUpPrefix = "Error: changing settings via 'mirage up' requires mentioning all\n" +
 	"non-default flags. To proceed, either re-run your command with --reset or\n" +
 	"use the command below to explicitly mention the current value of\n" +
 	"all non-default settings:\n\n" +
-	"\ttailscale up"
+	"\tmirage up"
 
 // upCheckEnv are extra parameters describing the environment as
 // needed by checkForAccidentalSettingReverts and friends.

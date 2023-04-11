@@ -180,6 +180,10 @@ func (s *FileStore) WriteState(id ipn.StateKey, bs []byte) error {
 		return nil
 	}
 	s.cache[id] = bytes.Clone(bs)
+	//cgao6: dont leave too many null in the server-state file, it's not graceful
+	if strings.HasPrefix(string(id), "profile-") && bs == nil {
+		delete(s.cache, id)
+	}
 	bs, err := json.MarshalIndent(s.cache, "", "  ")
 	if err != nil {
 		return err

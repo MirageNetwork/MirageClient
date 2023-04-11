@@ -9,6 +9,11 @@
 __debug_bin
 mirageNavi
 
+mirage
+miraged
+
+.github/workflows
+
 cmd/tailscale/tailscale
 cmd/tailscaled/tailscaled
 
@@ -26,7 +31,7 @@ cmd/tailscaled/tailscaled
 .envrc
 
 # Ignore personal VS Code settings
-.vscode/
+#.vscode/
 
 # Support personal project-specific GOPATH
 .gopath/

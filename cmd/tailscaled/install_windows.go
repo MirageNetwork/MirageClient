@@ -61,15 +61,15 @@ func installSystemDaemonWindows(args []string) (err error) {
 	// Exponential backoff is often too aggressive, so use (mostly)
 	// squares instead.
 	ra := []mgr.RecoveryAction{
-		{mgr.ServiceRestart, 1 * time.Second},
-		{mgr.ServiceRestart, 2 * time.Second},
-		{mgr.ServiceRestart, 4 * time.Second},
-		{mgr.ServiceRestart, 9 * time.Second},
-		{mgr.ServiceRestart, 16 * time.Second},
-		{mgr.ServiceRestart, 25 * time.Second},
-		{mgr.ServiceRestart, 36 * time.Second},
-		{mgr.ServiceRestart, 49 * time.Second},
-		{mgr.ServiceRestart, 64 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 1 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 2 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 4 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 9 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 16 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 25 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 36 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 49 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 64 * time.Second},
 	}
 	const resetPeriodSecs = 60
 	err = service.SetRecoveryActions(ra, resetPeriodSecs)

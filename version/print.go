@@ -14,6 +14,7 @@ import (
 var stringLazy = lazy.SyncFunc(func() string {
 	var ret strings.Builder
 	ret.WriteString(Short())
+	return strings.TrimSpace(ret.String()) //cgao6: we need short version only for now
 	ret.WriteByte('\n')
 	if IsUnstableBuild() {
 		fmt.Fprintf(&ret, "  track: unstable (dev); frequent updates and bugs are likely\n")

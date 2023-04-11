@@ -98,37 +98,37 @@ func Run(args []string) (err error) {
 
 	rootCmd := &ffcli.Command{
 		Name:       "tailscale",
-		ShortUsage: "tailscale [flags] <subcommand> [command flags]",
-		ShortHelp:  "The easiest, most secure way to use WireGuard.",
+		ShortUsage: "mirage [flags] <subcommand> [command flags]",
+		ShortHelp:  "The easiest, most secure way to connect together.",
 		LongHelp: strings.TrimSpace(`
-For help on subcommands, add --help after: "tailscale status --help".
-
-This CLI is still under active development. Commands and flags will
-change in the future.
+For help on subcommands, add --help after: "mirage status --help".
 `),
+		// This CLI is still under active development. Commands and flags will
+		// change in the future.
+		// `),
 		Subcommands: []*ffcli.Command{
 			upCmd,
 			downCmd,
 			setCmd,
 			loginCmd,
 			logoutCmd,
-			switchCmd,
+			//			switchCmd,
 			configureCmd,
 			netcheckCmd,
 			ipCmd,
 			statusCmd,
 			pingCmd,
-			ncCmd,
-			sshCmd,
+			//			ncCmd,
+			//			sshCmd,
 			funnelCmd,
 			serveCmd,
 			versionCmd,
-			webCmd,
-			fileCmd,
-			bugReportCmd,
-			certCmd,
-			netlockCmd,
-			licensesCmd,
+			//			webCmd,
+			//			fileCmd,
+			//			bugReportCmd,
+			//			certCmd,
+			//			netlockCmd,
+			//			licensesCmd,
 		},
 		FlagSet:   rootfs,
 		Exec:      func(context.Context, []string) error { return flag.ErrHelp },

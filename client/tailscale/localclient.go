@@ -88,7 +88,7 @@ func (lc *LocalClient) dialer() func(ctx context.Context, network, addr string) 
 }
 
 func (lc *LocalClient) defaultDialer(ctx context.Context, network, addr string) (net.Conn, error) {
-	if addr != "local-tailscaled.sock:80" {
+	if addr != "local-miraged.sock:80" {
 		return nil, fmt.Errorf("unexpected URL address %q", addr)
 	}
 	if !lc.UseSocketOnly {
@@ -114,7 +114,7 @@ func (lc *LocalClient) defaultDialer(ctx context.Context, network, addr string) 
 //
 // DoLocalRequest may mutate the request to add Authorization headers.
 func (lc *LocalClient) DoLocalRequest(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Tailscale-Cap", strconv.Itoa(int(tailcfg.CurrentCapabilityVersion)))
+	req.Header.Set("Mirage-Cap", strconv.Itoa(int(tailcfg.CurrentCapabilityVersion)))
 	lc.tsClientOnce.Do(func() {
 		lc.tsClient = &http.Client{
 			Transport: &http.Transport{
@@ -131,7 +131,7 @@ func (lc *LocalClient) DoLocalRequest(req *http.Request) (*http.Response, error)
 func (lc *LocalClient) doLocalRequestNiceError(req *http.Request) (*http.Response, error) {
 	res, err := lc.DoLocalRequest(req)
 	if err == nil {
-		if server := res.Header.Get("Tailscale-Version"); server != "" && server != envknob.IPCVersion() && onVersionMismatch != nil {
+		if server := res.Header.Get("Mirage-Version"); server != "" && server != envknob.IPCVersion() && onVersionMismatch != nil {
 			onVersionMismatch(envknob.IPCVersion(), server)
 		}
 		if res.StatusCode == 403 {
@@ -144,7 +144,7 @@ func (lc *LocalClient) doLocalRequestNiceError(req *http.Request) (*http.Respons
 		if oe, ok := ue.Err.(*net.OpError); ok && oe.Op == "dial" {
 			path := req.URL.Path
 			pathPrefix, _, _ := strings.Cut(path, "?")
-			return nil, fmt.Errorf("Failed to connect to local Tailscale daemon for %s; %s Error: %w", pathPrefix, tailscaledConnectHint(), oe)
+			return nil, fmt.Errorf("Failed to connect to local Mirage daemon for %s; %s Error: %w", pathPrefix, tailscaledConnectHint(), oe)
 		}
 	}
 	return nil, err
@@ -407,6 +407,27 @@ func (lc *LocalClient) SetDevStoreKeyValue(ctx context.Context, key, value strin
 		return fmt.Errorf("error %w: %s", err, body)
 	}
 	return nil
+}
+
+// cgao6: 增加正式的后端接收前端设置store的接口
+func (lc *LocalClient) SetStore(ctx context.Context, key, value string) error {
+	body, err := lc.send(ctx, "POST", "/localapi/v0/set-state-store?"+(url.Values{
+		"key":   {key},
+		"value": {value},
+	}).Encode(), 200, nil)
+	if err != nil {
+		return fmt.Errorf("error %w: %s", err, body)
+	}
+	return nil
+}
+
+// cgao6: 此外尝试增加对应的从后端读取store的接口
+func (lc *LocalClient) GetStore(ctx context.Context, key string) ([]byte, error) {
+	value, err := lc.get200(ctx, "/localapi/v0/get-state-store?key="+url.QueryEscape(key))
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 // SetComponentDebugLogging sets component's debug logging enabled for
@@ -990,7 +1011,7 @@ func tailscaledConnectHint() string {
 		// TODO(bradfitz): flesh this out
 		return "not running?"
 	}
-	out, err := exec.Command("systemctl", "show", "tailscaled.service", "--no-page", "--property", "LoadState,ActiveState,SubState").Output()
+	out, err := exec.Command("systemctl", "show", "miraged.service", "--no-page", "--property", "LoadState,ActiveState,SubState").Output()
 	if err != nil {
 		return "not running?"
 	}
@@ -1006,7 +1027,7 @@ func tailscaledConnectHint() string {
 	}
 	if st["LoadState"] == "loaded" &&
 		(st["SubState"] != "running" || st["ActiveState"] != "active") {
-		return "systemd tailscaled.service not running."
+		return "systemd miraged.service not running."
 	}
 	return "not running?"
 }

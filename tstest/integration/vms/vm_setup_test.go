@@ -78,7 +78,7 @@ func (h *Harness) mkVM(t *testing.T, n int, d Distro, sshKey, hostURL, tdir stri
 	if err != nil {
 		t.Fatalf("can't find cache dir: %v", err)
 	}
-	cdir = filepath.Join(cdir, "tailscale", "vm-test")
+	cdir = filepath.Join(cdir, "mirage", "vm-test")
 	os.MkdirAll(filepath.Join(cdir, "qcow2"), 0755)
 
 	port, err := getProbablyFreePortNumber()
@@ -236,7 +236,7 @@ func fetchDistro(t *testing.T, resultDistro Distro) string {
 	if err != nil {
 		t.Fatalf("can't find cache dir: %v", err)
 	}
-	cdir = filepath.Join(cdir, "tailscale", "vm-test")
+	cdir = filepath.Join(cdir, "mirage", "vm-test")
 
 	qcowPath := filepath.Join(cdir, "qcow2", resultDistro.SHA256Sum)
 
@@ -328,31 +328,31 @@ func (h *Harness) copyBinaries(t *testing.T, d Distro, conn *ssh.Client) {
 	mkdir(t, cli, "/usr/bin")
 	mkdir(t, cli, "/usr/sbin")
 	mkdir(t, cli, "/etc/default")
-	mkdir(t, cli, "/var/lib/tailscale")
+	mkdir(t, cli, "/var/lib/mirage")
 
-	copyFile(t, cli, h.daemon, "/usr/sbin/tailscaled")
-	copyFile(t, cli, h.cli, "/usr/bin/tailscale")
+	copyFile(t, cli, h.daemon, "/usr/sbin/miraged")
+	copyFile(t, cli, h.cli, "/usr/bin/mirage")
 
 	// TODO(Xe): revisit this assumption before it breaks the test.
-	copyFile(t, cli, "../../../cmd/tailscaled/tailscaled.defaults", "/etc/default/tailscaled")
+	copyFile(t, cli, "../../../cmd/miraged/miraged.defaults", "/etc/default/miraged")
 
 	switch d.InitSystem {
 	case "openrc":
 		mkdir(t, cli, "/etc/init.d")
-		copyFile(t, cli, "../../../cmd/tailscaled/tailscaled.openrc", "/etc/init.d/tailscaled")
+		copyFile(t, cli, "../../../cmd/miraged/miraged.openrc", "/etc/init.d/miraged")
 	case "systemd":
 		mkdir(t, cli, "/etc/systemd/system")
-		copyFile(t, cli, "../../../cmd/tailscaled/tailscaled.service", "/etc/systemd/system/tailscaled.service")
+		copyFile(t, cli, "../../../cmd/miraged/miraged.service", "/etc/systemd/system/miraged.service")
 	}
 
-	fout, err := cli.OpenFile("/etc/default/tailscaled", os.O_WRONLY|os.O_APPEND)
+	fout, err := cli.OpenFile("/etc/default/miraged", os.O_WRONLY|os.O_APPEND)
 	if err != nil {
-		t.Fatalf("can't append to defaults for tailscaled: %v", err)
+		t.Fatalf("can't append to defaults for miraged: %v", err)
 	}
 	fmt.Fprintf(fout, "\n\nTS_LOG_TARGET=%s\n", h.loginServerURL)
 	fout.Close()
 
-	t.Log("tailscale installed!")
+	t.Log("mirage installed!")
 }
 
 func mkdir(t *testing.T, cli *sftp.Client, name string) {

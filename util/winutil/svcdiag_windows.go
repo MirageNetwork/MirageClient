@@ -286,10 +286,36 @@ func connectToLocalSCMForRead() (*mgr.Mgr, error) {
 	return &mgr.Mgr{Handle: h}, nil
 }
 
+// connectToLocalSCMForRead connects to the Windows Service Control Manager with
+// read-only access. x/sys/windows/svc/mgr/Connect requests read+write access,
+// which requires higher privileges than we want.
+func ConnectToLocalSCMForRead() (*mgr.Mgr, error) {
+	h, err := windows.OpenSCManager(nil, nil, windows.GENERIC_READ)
+	if err != nil {
+		return nil, err
+	}
+	return &mgr.Mgr{Handle: h}, nil
+}
+
 // openServiceForRead opens a service with read-only access.
 // x/sys/windows/svc/mgr/(*Mgr).OpenService requests read+write access,
 // which requires higher privileges than we want.
 func openServiceForRead(scm *mgr.Mgr, svcName string) (*mgr.Service, error) {
+	svcNamePtr, err := windows.UTF16PtrFromString(svcName)
+	if err != nil {
+		return nil, err
+	}
+	h, err := windows.OpenService(scm.Handle, svcNamePtr, windows.GENERIC_READ)
+	if err != nil {
+		return nil, err
+	}
+	return &mgr.Service{Name: svcName, Handle: h}, nil
+}
+
+// openServiceForRead opens a service with read-only access.
+// x/sys/windows/svc/mgr/(*Mgr).OpenService requests read+write access,
+// which requires higher privileges than we want.
+func OpenServiceForRead(scm *mgr.Mgr, svcName string) (*mgr.Service, error) {
 	svcNamePtr, err := windows.UTF16PtrFromString(svcName)
 	if err != nil {
 		return nil, err

@@ -237,28 +237,28 @@ func (ft *firewallTweaker) doAsyncSet() {
 // Must only be invoked from doAsyncSet.
 func (ft *firewallTweaker) doSet(local []string, killswitch bool, clear bool, procRule bool, allowedRoutes []netip.Prefix) error {
 	if clear {
-		ft.logf("clearing Tailscale-In firewall rules...")
+		ft.logf("clearing Mirage-In firewall rules...")
 		// We ignore the error here, because netsh returns an error for
 		// deleting something that doesn't match.
 		// TODO(bradfitz): care? That'd involve querying it before/after to see
 		// whether it was necessary/worked. But the output format is localized,
 		// so can't rely on parsing English. Maybe need to use OLE, not netsh.exe?
-		d, _ := ft.runFirewall("delete", "rule", "name=Tailscale-In", "dir=in")
-		ft.logf("cleared Tailscale-In firewall rules in %v", d)
+		d, _ := ft.runFirewall("delete", "rule", "name=Mirage-In", "dir=in")
+		ft.logf("cleared Mirage-In firewall rules in %v", d)
 	}
 	if procRule {
-		ft.logf("deleting any prior Tailscale-Process rule...")
-		d, err := ft.runFirewall("delete", "rule", "name=Tailscale-Process", "dir=in") // best effort
+		ft.logf("deleting any prior Mirage-Process rule...")
+		d, err := ft.runFirewall("delete", "rule", "name=Mirage-Process", "dir=in") // best effort
 		if err == nil {
-			ft.logf("removed old Tailscale-Process rule in %v", d)
+			ft.logf("removed old Mirage-Process rule in %v", d)
 		}
 		var exe string
 		exe, err = os.Executable()
 		if err != nil {
-			ft.logf("failed to find Executable for Tailscale-Process rule: %v", err)
+			ft.logf("failed to find Executable for Mirage-Process rule: %v", err)
 		} else {
-			ft.logf("adding Tailscale-Process rule to allow UDP for %q ...", exe)
-			d, err = ft.runFirewall("add", "rule", "name=Tailscale-Process",
+			ft.logf("adding Mirage-Process rule to allow UDP for %q ...", exe)
+			d, err = ft.runFirewall("add", "rule", "name=Mirage-Process",
 				"dir=in",
 				"action=allow",
 				"edge=yes",
@@ -268,24 +268,24 @@ func (ft *firewallTweaker) doSet(local []string, killswitch bool, clear bool, pr
 				"enable=yes",
 			)
 			if err != nil {
-				ft.logf("error adding Tailscale-Process rule: %v", err)
+				ft.logf("error adding Mirage-Process rule: %v", err)
 			} else {
 				ft.mu.Lock()
 				ft.didProcRule = true
 				ft.mu.Unlock()
-				ft.logf("added Tailscale-Process rule in %v", d)
+				ft.logf("added Mirage-Process rule in %v", d)
 			}
 		}
 	}
 	for _, cidr := range local {
-		ft.logf("adding Tailscale-In rule to allow %v ...", cidr)
+		ft.logf("adding Mirage-In rule to allow %v ...", cidr)
 		var d time.Duration
-		d, err := ft.runFirewall("add", "rule", "name=Tailscale-In", "dir=in", "action=allow", "localip="+cidr, "profile=private", "enable=yes")
+		d, err := ft.runFirewall("add", "rule", "name=Mirage-In", "dir=in", "action=allow", "localip="+cidr, "profile=private", "enable=yes")
 		if err != nil {
-			ft.logf("error adding Tailscale-In rule to allow %v: %v", cidr, err)
+			ft.logf("error adding Mirage-In rule to allow %v: %v", cidr, err)
 			return err
 		}
-		ft.logf("added Tailscale-In rule to allow %v in %v", cidr, d)
+		ft.logf("added Mirage-In rule to allow %v in %v", cidr, d)
 	}
 
 	if !killswitch {
@@ -303,7 +303,7 @@ func (ft *firewallTweaker) doSet(local []string, killswitch bool, clear bool, pr
 		if err != nil {
 			return err
 		}
-		proc := exec.Command(exe, "/firewall", ft.tunGUID.String())
+		proc := exec.Command(exe, "-firewall", "-tunGUID", ft.tunGUID.String())
 		in, err := proc.StdinPipe()
 		if err != nil {
 			return err

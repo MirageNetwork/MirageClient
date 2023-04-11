@@ -46,7 +46,7 @@ var fileCmd = &ffcli.Command{
 		// TODO(bradfitz): is there a better ffcli way to
 		// annotate subcommand-required commands that don't
 		// have an exec body of their own?
-		return errors.New("file subcommand required; run 'tailscale file -h' for details")
+		return errors.New("file subcommand required; run 'mirage file -h' for details")
 	},
 }
 
@@ -86,12 +86,12 @@ func runCp(ctx context.Context, args []string) error {
 		return runCpTargets(ctx, args)
 	}
 	if len(args) < 2 {
-		return errors.New("usage: tailscale file cp <files...> <target>:")
+		return errors.New("usage: mirage file cp <files...> <target>:")
 	}
 	files, target := args[:len(args)-1], args[len(args)-1]
 	target, ok := strings.CutSuffix(target, ":")
 	if !ok {
-		return fmt.Errorf("final argument to 'tailscale file cp' must end in colon")
+		return fmt.Errorf("final argument to 'mirage file cp' must end in colon")
 	}
 	hadBrackets := false
 	if strings.HasPrefix(target, "[") && strings.HasSuffix(target, "]") {
@@ -143,7 +143,7 @@ func runCp(ctx context.Context, args []string) error {
 			f, err := os.Open(fileArg)
 			if err != nil {
 				if version.IsSandboxedMacOS() {
-					return errors.New("the GUI version of Tailscale on macOS runs in a macOS sandbox that can't read files")
+					return errors.New("the GUI version of Mirage on macOS runs in a macOS sandbox that can't read files")
 				}
 				return err
 			}
@@ -280,12 +280,12 @@ func fileTargetErrorDetail(ctx context.Context, ip netip.Addr) error {
 		}
 	}
 	if found {
-		return errors.New("target seems to be running an old Tailscale version")
+		return errors.New("target seems to be running an old Mirage version")
 	}
 	if !tsaddr.IsTailscaleIP(ip) {
-		return fmt.Errorf("unknown target; %v is not a Tailscale IP address", ip)
+		return fmt.Errorf("unknown target; %v is not a Mirage IP address", ip)
 	}
-	return errors.New("unknown target; not in your Tailnet")
+	return errors.New("unknown target; not in your Miragenet")
 }
 
 const maxSniff = 4 << 20
@@ -386,7 +386,7 @@ func (v *onConflict) Set(s string) error {
 var fileGetCmd = &ffcli.Command{
 	Name:       "get",
 	ShortUsage: "file get [--wait] [--verbose] [--conflict=(skip|overwrite|rename)] <target-directory>",
-	ShortHelp:  "Move files out of the Tailscale file inbox",
+	ShortHelp:  "Move files out of the Mirage file inbox",
 	Exec:       runFileGet,
 	FlagSet: (func() *flag.FlagSet {
 		fs := newFlagSet("get")
