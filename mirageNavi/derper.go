@@ -20,10 +20,12 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/caddyserver/certmagic"
@@ -33,6 +35,7 @@ import (
 	"github.com/libdns/namesilo"
 	"github.com/libdns/tencentcloud"
 	"go4.org/mem"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	"k8s.io/client-go/util/homedir"
 	"tailscale.com/atomicfile"
@@ -159,82 +162,86 @@ func writeNewConfig(ctrlURL, derpID string) config {
 func main() {
 	flag.Parse()
 
-	if *dev {
-		*addr = ":3340" // above the keys DERP
-		log.Printf("Running in dev mode.")
-		tsweb.DevMode = true
-	}
+	for {
 
-	listenHost, _, err := net.SplitHostPort(*addr)
-	if err != nil {
-		log.Fatalf("invalid server address: %v", err)
-	}
+		if *dev {
+			*addr = ":3340" // above the keys DERP
+			log.Printf("Running in dev mode.")
+			tsweb.DevMode = true
+		}
 
-	cfg := loadConfig()
-
-	//	serveTLS := tsweb.IsProd443(*addr) || *certMode == "manual"
-
-	s := derp.NewServer(cfg.PrivateKey, log.Printf)
-
-	if *ctrlURL != "" && *derpID != "" {
-		*verifyClients = true
-		err = s.PrepareManaged(cfg.CtrlURL, cfg.DERPID, cfg.NaviKey)
+		listenHost, _, err := net.SplitHostPort(*addr)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("invalid server address: %v", err)
 		}
-		naviInfo, err := s.TryLogin()
-		if err != nil {
-			log.Fatal(err) //TODO: cgao6: 遇到获取失败且需要处理的情形
+
+		cfg := loadConfig()
+
+		//	serveTLS := tsweb.IsProd443(*addr) || *certMode == "manual"
+
+		s := derp.NewServer(cfg.PrivateKey, log.Printf)
+
+		if *ctrlURL != "" && *derpID != "" {
+			*verifyClients = true
+			err = s.PrepareManaged(cfg.CtrlURL, cfg.DERPID, cfg.NaviKey)
+			if err != nil {
+				log.Fatal(err)
+			}
+			naviInfo, err := s.TryLogin()
+			if err != nil {
+				log.Fatal(err) //TODO: cgao6: 遇到获取失败且需要处理的情形
+			}
+			s.UpdateNaviInfo(naviInfo,
+				hostname, addr, setIPv4, setIPv6, dnsProvider, dnsID, dnsKey,
+				stunPort,
+				runDERP, runSTUN,
+			)
+			s.Cronjob.Start()
+			defer s.Cronjob.Stop()
 		}
-		s.UpdateNaviInfo(naviInfo,
-			hostname, addr, setIPv4, setIPv6, dnsProvider, dnsID, dnsKey,
-			stunPort,
-			runDERP, runSTUN,
-		)
-		s.Cronjob.Start()
-		defer s.Cronjob.Stop()
-	}
-	s.SetVerifyClient(*verifyClients)
+		s.SetVerifyClient(*verifyClients)
 
-	if *meshPSKFile != "" {
-		b, err := os.ReadFile(*meshPSKFile)
-		if err != nil {
-			log.Fatal(err)
+		if *meshPSKFile != "" {
+			b, err := os.ReadFile(*meshPSKFile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			key := strings.TrimSpace(string(b))
+			if matched, _ := regexp.MatchString(`(?i)^[0-9a-f]{64,}$`, key); !matched {
+				log.Fatalf("key in %s must contain 64+ hex digits", *meshPSKFile)
+			}
+			s.SetMeshKey(key)
+			log.Printf("DERP mesh key configured")
 		}
-		key := strings.TrimSpace(string(b))
-		if matched, _ := regexp.MatchString(`(?i)^[0-9a-f]{64,}$`, key); !matched {
-			log.Fatalf("key in %s must contain 64+ hex digits", *meshPSKFile)
+		if err := startMesh(s); err != nil {
+			log.Fatalf("startMesh: %v", err)
 		}
-		s.SetMeshKey(key)
-		log.Printf("DERP mesh key configured")
-	}
-	if err := startMesh(s); err != nil {
-		log.Fatalf("startMesh: %v", err)
-	}
-	expvar.Publish("derp", s.ExpVar())
+		if expvar.Get("derp") == nil {
+			expvar.Publish("derp", s.ExpVar())
+		}
 
-	mux := http.NewServeMux()
+		mux := http.NewServeMux()
 
-	if *ctrlURL != "" && *derpID != "" { //受管节点开启noise管理端口
-		mux.HandleFunc("/ts2021", s.NoiseUpgradeHandler)
-	}
+		if *ctrlURL != "" && *derpID != "" { //受管节点开启noise管理端口
+			mux.HandleFunc("/ts2021", s.NoiseUpgradeHandler)
+		}
 
-	if *runDERP {
-		derpHandler := derphttp.Handler(s)
-		derpHandler = addWebSocketSupport(s, derpHandler)
-		mux.Handle("/derp", derpHandler)
-	} else {
-		mux.Handle("/derp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "derp server disabled", http.StatusNotFound)
-		}))
-	}
-	mux.HandleFunc("/derp/probe", probeHandler)
-	go refreshBootstrapDNSLoop()
-	mux.HandleFunc("/bootstrap-dns", handleBootstrapDNS)
-	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(200)
-		io.WriteString(w, `<html><body>
+		if *runDERP {
+			derpHandler := derphttp.Handler(s)
+			derpHandler = addWebSocketSupport(s, derpHandler)
+			mux.Handle("/derp", derpHandler)
+		} else {
+			mux.Handle("/derp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "derp server disabled", http.StatusNotFound)
+			}))
+		}
+		mux.HandleFunc("/derp/probe", probeHandler)
+		go refreshBootstrapDNSLoop()
+		mux.HandleFunc("/bootstrap-dns", handleBootstrapDNS)
+		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(200)
+			io.WriteString(w, `<html><body>
 <h1>司南</h1>
 <p>
   这是
@@ -242,270 +249,237 @@ func main() {
   <a href="https://pkg.go.dev/tailscale.com/derp">司南 </a>
 </p>
 `)
-		if !*runDERP {
-			io.WriteString(w, `<p>状态: <b>无中继</b></p>`)
-		}
-		if tsweb.AllowDebugAccess(r) {
-			io.WriteString(w, "<p>调试信息在 <a href='/debug/'>/debug/</a>.</p>\n")
-		}
-	}))
-	mux.Handle("/robots.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "User-agent: *\nDisallow: /\n")
-	}))
-	mux.Handle("/generate_204", http.HandlerFunc(serveNoContent))
-	debug := tsweb.Debugger(mux)
-	debug.KV("TLS hostname", *hostname)
-	debug.KV("Mesh key", s.HasMeshKey())
-	debug.Handle("check", "Consistency check", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := s.ConsistencyCheck()
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-		} else {
-			io.WriteString(w, "derp.Server ConsistencyCheck okay")
-		}
-	}))
-	debug.Handle("traffic", "Traffic check", http.HandlerFunc(s.ServeDebugTraffic))
-
-	if *runSTUN {
-		go serveSTUN(listenHost, *stunPort)
-	}
-
-	quietLogger := log.New(logFilter{}, "", 0)
-	httpsrv := &http.Server{
-		Addr:     *addr,
-		Handler:  mux,
-		ErrorLog: quietLogger,
-
-		// Set read/write timeout. For derper, this basically
-		// only affects TLS setup, as read/write deadlines are
-		// cleared on Hijack, which the DERP server does. But
-		// without this, we slowly accumulate stuck TLS
-		// handshake goroutines forever. This also affects
-		// /debug/ traffic, but 30 seconds is plenty for
-		// Prometheus/etc scraping.
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-	}
-
-	//cgao6: 从这里开始，我们按照自己的需要实现只能HTTPS访问（支持TLS挑战、DNS挑战、手动证书）
-	//cgao6: 感谢Caddy
-	var tlsConfig *tls.Config
-	switch *certMode {
-	case "letsencrypt": // ALPN challenge
-		certmagic.Default.Storage = &certmagic.FileStorage{Path: filepath.Join(homedir.HomeDir(), ".mirage", "certs")}
-		cache := certmagic.NewCache(certmagic.CacheOptions{
-			GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
-				return &certmagic.Config{}, nil
-			},
-		})
-		magic := certmagic.New(cache, certmagic.Config{})
-		myACME := certmagic.NewACMEIssuer(magic, certmagic.ACMEIssuer{
-			CA:                   certmagic.LetsEncryptProductionCA, // certmagic.LetsEncryptStagingCA,
-			Email:                "gps949@outlook.com",
-			Agreed:               true,
-			DisableHTTPChallenge: true,
-		})
-		if *dnsProvider == "" {
-			alpnPort, err := strconv.Atoi(strings.TrimPrefix(*addr, ":"))
+			if !*runDERP {
+				io.WriteString(w, `<p>状态: <b>无中继</b></p>`)
+			}
+			if tsweb.AllowDebugAccess(r) {
+				io.WriteString(w, "<p>调试信息在 <a href='/debug/'>/debug/</a>.</p>\n")
+			}
+		}))
+		mux.Handle("/robots.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, "User-agent: *\nDisallow: /\n")
+		}))
+		mux.Handle("/generate_204", http.HandlerFunc(serveNoContent))
+		debug := tsweb.Debugger(mux)
+		debug.KV("TLS hostname", *hostname)
+		debug.KV("Mesh key", s.HasMeshKey())
+		debug.Handle("check", "Consistency check", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			err := s.ConsistencyCheck()
 			if err != nil {
-				log.Fatal("Can't convert port to int")
+				http.Error(w, err.Error(), 500)
+			} else {
+				io.WriteString(w, "derp.Server ConsistencyCheck okay")
 			}
-			myACME.AltTLSALPNPort = alpnPort
-		} else {
-			myACME.DisableTLSALPNChallenge = true
-			var provider certmagic.ACMEDNSProvider
-			switch *dnsProvider {
-			case "cloudflare":
-				provider = &cloudflare.Provider{
-					APIToken: *dnsKey,
-				}
-			case "aliyun":
-				provider = &alidns.Provider{
-					AccKeyID:     *dnsID,
-					AccKeySecret: *dnsKey,
-				}
-			case "qcloud":
-				provider = &tencentcloud.Provider{
-					SecretId:  *dnsID,
-					SecretKey: *dnsKey,
-				}
-			case "namesilo":
-				provider = &namesilo.Provider{
-					APIToken: *dnsKey,
-				}
-			}
-			zone, err := findZoneByFQDN(*hostname, recursiveNameservers([]string{}))
-			if err != nil {
-				log.Fatal("Can't find zone for hostname")
-			}
-			if *setIPv4 != "" {
-				provider.AppendRecords(context.TODO(), zone, []libdns.Record{{
-					Type:  "A",
-					Name:  strings.TrimSuffix(*hostname, "."+strings.TrimSuffix(zone, ".")),
-					Value: *setIPv4,
-				}})
-			}
-			if *setIPv6 != "" {
-				provider.AppendRecords(context.TODO(), zone, []libdns.Record{{
-					Type:  "AAAA",
-					Name:  strings.TrimSuffix(*hostname, "."+strings.TrimSuffix(zone, ".")),
-					Value: *setIPv6,
-				}})
-			}
-			myACME.DNS01Solver = &certmagic.DNS01Solver{
-				DNSProvider: provider,
-			}
-		}
-		if *dnsProvider == "" && myACME.AltTLSALPNPort != 443 {
-			cmd := exec.Command("sudo", "iptables", "-t", "nat", "-A", "PREROUTING", "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-ports", fmt.Sprint(myACME.AltTLSALPNPort))
-			err = cmd.Run()
-			if err != nil {
-				log.Fatal("Can't add iptables rule")
-			}
-		}
-		magic.Issuers = []certmagic.Issuer{myACME}
-		err = magic.ManageSync(context.TODO(), []string{*hostname})
-		if *dnsProvider == "" && myACME.AltTLSALPNPort != 443 {
-			cmd := exec.Command("sudo", "iptables", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-ports", fmt.Sprint(myACME.AltTLSALPNPort))
-			err = cmd.Run()
-			if err != nil {
-				log.Fatal("Can't add iptables rule")
-			}
-		}
-		if err != nil {
-			log.Fatal("Can't handle with the cert managesync")
-		}
-		tlsConfig = magic.TLSConfig()
-	case "manual": // Manual certificate
-		var certManager certProvider
-		certManager, err = certProviderByCertMode(*certMode, *certDir, *hostname)
-		if err != nil {
-			log.Fatalf("derper: can not start cert provider: %v", err)
-		}
-		tlsConfig = certManager.TLSConfig()
-	}
-	httpsrv.TLSConfig = tlsConfig
-	getCert := httpsrv.TLSConfig.GetCertificate
-	httpsrv.TLSConfig.GetCertificate = func(hi *tls.ClientHelloInfo) (*tls.Certificate, error) {
-		cert, err := getCert(hi)
-		if err != nil {
-			return nil, err
-		}
-		cert.Certificate = append(cert.Certificate, s.MetaCert())
-		return cert, nil
-	}
-	httpsrv.TLSConfig.MinVersion = tls.VersionTLS12
-	httpsrv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.TLS != nil {
-			label := "unknown"
-			switch r.TLS.Version {
-			case tls.VersionTLS10:
-				label = "1.0"
-			case tls.VersionTLS11:
-				label = "1.1"
-			case tls.VersionTLS12:
-				label = "1.2"
-			case tls.VersionTLS13:
-				label = "1.3"
-			}
-			tlsRequestVersion.Add(label, 1)
-			tlsActiveVersion.Add(label, 1)
-			defer tlsActiveVersion.Add(label, -1)
-		}
-		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'self'; block-all-mixed-content; plugin-types 'none'")
-		mux.ServeHTTP(w, r)
-	})
-	err = rateLimitedListenAndServeTLS(httpsrv)
+		}))
+		debug.Handle("traffic", "Traffic check", http.HandlerFunc(s.ServeDebugTraffic))
 
-	//cgao6:我们的部分到这里结束
+		if *runSTUN {
+			go serveSTUN(listenHost, *stunPort)
+			*runSTUN = false
+		}
 
-	/*
-		if serveTLS {
+		quietLogger := log.New(logFilter{}, "", 0)
+		httpsrv := &http.Server{
+			Addr:     *addr,
+			Handler:  mux,
+			ErrorLog: quietLogger,
 
-			log.Printf("derper: serving on %s with TLS", *addr)
+			// Set read/write timeout. For derper, this basically
+			// only affects TLS setup, as read/write deadlines are
+			// cleared on Hijack, which the DERP server does. But
+			// without this, we slowly accumulate stuck TLS
+			// handshake goroutines forever. This also affects
+			// /debug/ traffic, but 30 seconds is plenty for
+			// Prometheus/etc scraping.
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+		}
+
+		//cgao6: 从这里开始，我们按照自己的需要实现只能HTTPS访问（支持TLS挑战、DNS挑战、手动证书）
+		//cgao6: 感谢Caddy
+		var tlsConfig *tls.Config
+		var certExpires time.Time
+		switch *certMode {
+		case "letsencrypt": // ALPN challenge
+			certmagic.Default.Storage = &certmagic.FileStorage{Path: filepath.Join(homedir.HomeDir(), ".mirage", "certs")}
+			cache := certmagic.NewCache(certmagic.CacheOptions{
+				GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
+					return &certmagic.Config{}, nil
+				},
+			})
+			magic := certmagic.New(cache, certmagic.Config{})
+			myACME := certmagic.NewACMEIssuer(magic, certmagic.ACMEIssuer{
+				CA:                   certmagic.LetsEncryptProductionCA, // certmagic.LetsEncryptStagingCA,
+				Email:                "gps949@outlook.com",
+				Agreed:               true,
+				DisableHTTPChallenge: true,
+			})
+			if *dnsProvider == "" {
+				alpnPort, err := strconv.Atoi(strings.TrimPrefix(*addr, ":"))
+				if err != nil {
+					log.Fatal("Can't convert port to int")
+				}
+				myACME.AltTLSALPNPort = alpnPort
+			} else {
+				myACME.DisableTLSALPNChallenge = true
+				var provider certmagic.ACMEDNSProvider
+				switch *dnsProvider {
+				case "cloudflare":
+					provider = &cloudflare.Provider{
+						APIToken: *dnsKey,
+					}
+				case "aliyun":
+					provider = &alidns.Provider{
+						AccKeyID:     *dnsID,
+						AccKeySecret: *dnsKey,
+					}
+				case "qcloud":
+					provider = &tencentcloud.Provider{
+						SecretId:  *dnsID,
+						SecretKey: *dnsKey,
+					}
+				case "namesilo":
+					provider = &namesilo.Provider{
+						APIToken: *dnsKey,
+					}
+				}
+				zone, err := findZoneByFQDN(*hostname, recursiveNameservers([]string{}))
+				if err != nil {
+					log.Fatal("Can't find zone for hostname")
+				}
+				if *setIPv4 != "" {
+					provider.AppendRecords(context.TODO(), zone, []libdns.Record{{
+						Type:  "A",
+						Name:  strings.TrimSuffix(*hostname, "."+strings.TrimSuffix(zone, ".")),
+						Value: *setIPv4,
+					}})
+				}
+				if *setIPv6 != "" {
+					provider.AppendRecords(context.TODO(), zone, []libdns.Record{{
+						Type:  "AAAA",
+						Name:  strings.TrimSuffix(*hostname, "."+strings.TrimSuffix(zone, ".")),
+						Value: *setIPv6,
+					}})
+				}
+				myACME.DNS01Solver = &certmagic.DNS01Solver{
+					DNSProvider: provider,
+				}
+			}
+			if *dnsProvider == "" && myACME.AltTLSALPNPort != 443 {
+				cmd := exec.Command("sudo", "iptables", "-t", "nat", "-A", "PREROUTING", "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-ports", fmt.Sprint(myACME.AltTLSALPNPort))
+				err = cmd.Run()
+				if err != nil {
+					log.Fatal("Can't add iptables rule")
+				}
+			}
+			magic.Issuers = []certmagic.Issuer{myACME}
+			err = magic.ManageSync(context.TODO(), []string{*hostname})
+			if *dnsProvider == "" && myACME.AltTLSALPNPort != 443 {
+				cmd := exec.Command("sudo", "iptables", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-ports", fmt.Sprint(myACME.AltTLSALPNPort))
+				err = cmd.Run()
+				if err != nil {
+					log.Fatal("Can't add iptables rule")
+				}
+			}
+			if err != nil {
+				log.Fatal("Can't handle with the cert managesync")
+			}
+			tlsConfig = magic.TLSConfig()
+			certExpires = cache.AllMatchingCertificates(*hostname)[0].Leaf.NotAfter
+		case "manual": // Manual certificate
 			var certManager certProvider
 			certManager, err = certProviderByCertMode(*certMode, *certDir, *hostname)
 			if err != nil {
 				log.Fatalf("derper: can not start cert provider: %v", err)
 			}
-			httpsrv.TLSConfig = certManager.TLSConfig()
-			getCert := httpsrv.TLSConfig.GetCertificate
-			httpsrv.TLSConfig.GetCertificate = func(hi *tls.ClientHelloInfo) (*tls.Certificate, error) {
-				cert, err := getCert(hi)
-				if err != nil {
-					return nil, err
-				}
-				cert.Certificate = append(cert.Certificate, s.MetaCert())
-				return cert, nil
-			}
-			// Disable TLS 1.0 and 1.1, which are obsolete and have security issues.
-			httpsrv.TLSConfig.MinVersion = tls.VersionTLS12
-			httpsrv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.TLS != nil {
-					label := "unknown"
-					switch r.TLS.Version {
-					case tls.VersionTLS10:
-						label = "1.0"
-					case tls.VersionTLS11:
-						label = "1.1"
-					case tls.VersionTLS12:
-						label = "1.2"
-					case tls.VersionTLS13:
-						label = "1.3"
-					}
-					tlsRequestVersion.Add(label, 1)
-					tlsActiveVersion.Add(label, 1)
-					defer tlsActiveVersion.Add(label, -1)
-				}
-
-				// Set HTTP headers to appease automated security scanners.
-				//
-				// Security automation gets cranky when HTTPS sites don't
-				// set HSTS, and when they don't specify a content
-				// security policy for XSS mitigation.
-				//
-				// DERP's HTTP interface is only ever used for debug
-				// access (for which trivial safe policies work just
-				// fine), and by DERP clients which don't obey any of
-				// these browser-centric headers anyway.
-				w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
-				w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'self'; block-all-mixed-content; plugin-types 'none'")
-				mux.ServeHTTP(w, r)
-			})
-			if *httpPort > -1 {
-				go func() {
-					port80mux := http.NewServeMux()
-					port80mux.HandleFunc("/generate_204", serveNoContent)
-					port80mux.Handle("/", certManager.HTTPHandler(tsweb.Port80Handler{Main: mux}))
-					port80srv := &http.Server{
-						Addr:        net.JoinHostPort(listenHost, fmt.Sprintf("%d", *httpPort)),
-						Handler:     port80mux,
-						ErrorLog:    quietLogger,
-						ReadTimeout: 30 * time.Second,
-						// Crank up WriteTimeout a bit more than usually
-						// necessary just so we can do long CPU profiles
-						// and not hit net/http/pprof's "profile
-						// duration exceeds server's WriteTimeout".
-						WriteTimeout: 5 * time.Minute,
-					}
-					err := port80srv.ListenAndServe()
-					if err != nil {
-						if err != http.ErrServerClosed {
-							log.Fatal(err)
-						}
-					}
-				}()
-			}
-			err = rateLimitedListenAndServeTLS(httpsrv)
-		} else {
-			log.Printf("derper: serving on %s", *addr)
-			err = httpsrv.ListenAndServe()
+			tlsConfig = certManager.TLSConfig()
 		}
-	*/
+		httpsrv.TLSConfig = tlsConfig
+		getCert := httpsrv.TLSConfig.GetCertificate
+		httpsrv.TLSConfig.GetCertificate = func(hi *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			cert, err := getCert(hi)
+			if err != nil {
+				return nil, err
+			}
+			cert.Certificate = append(cert.Certificate, s.MetaCert())
+			return cert, nil
+		}
+		httpsrv.TLSConfig.MinVersion = tls.VersionTLS12
+		httpsrv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.TLS != nil {
+				label := "unknown"
+				switch r.TLS.Version {
+				case tls.VersionTLS10:
+					label = "1.0"
+				case tls.VersionTLS11:
+					label = "1.1"
+				case tls.VersionTLS12:
+					label = "1.2"
+				case tls.VersionTLS13:
+					label = "1.3"
+				}
+				tlsRequestVersion.Add(label, 1)
+				tlsActiveVersion.Add(label, 1)
+				defer tlsActiveVersion.Add(label, -1)
+			}
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'self'; block-all-mixed-content; plugin-types 'none'")
+			mux.ServeHTTP(w, r)
+		})
 
-	if err != nil && err != http.ErrServerClosed {
-		log.Fatalf("derper: %v", err)
+		errorGroup := new(errgroup.Group)
+
+		errorGroup.Go(func() error { return rateLimitedListenAndServeTLS(httpsrv) })
+
+		shutdownChan := make(chan struct{})
+		sigc := make(chan os.Signal, 1)
+		signal.Notify(sigc,
+			syscall.SIGINT,
+			syscall.SIGTERM,
+			syscall.SIGQUIT)
+		sigFunc := func(c chan os.Signal) {
+			// Wait for a SIGINT or SIGKILL:
+			for {
+				sig := <-c
+				switch sig {
+				case syscall.SIGUSR2:
+					log.Printf("derper: got signal %v; go restart", sig)
+					close(shutdownChan)
+					httpsrv.Close()
+					return
+				default:
+					log.Printf("derper: got signal %v; shutting down", sig)
+					close(shutdownChan)
+					httpsrv.Close()
+					os.Exit(0)
+				}
+			}
+		}
+		errorGroup.Go(func() error {
+			sigFunc(sigc)
+			return nil
+		})
+
+		if *certMode == "letsencrypt" {
+			ticker := time.NewTicker(time.Hour * 6)
+			defer ticker.Stop()
+			errorGroup.Go(func() error {
+				defer ticker.Stop()
+				for range ticker.C {
+					if certExpires.Sub(time.Now()) < time.Hour*24*7 {
+						log.Printf("derper: renewing certificate")
+						sigc <- syscall.SIGUSR2
+						return nil
+					}
+				}
+				return nil
+			})
+		}
+
+		err = errorGroup.Wait()
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatalf("derper: %v", err)
+		}
 	}
 }
 
@@ -630,7 +604,9 @@ func rateLimitedListenAndServeTLS(srv *http.Server) error {
 		return err
 	}
 	rln := newRateLimitedListener(ln, rate.Limit(*acceptConnLimit), *acceptConnBurst)
-	expvar.Publish("tls_listener", rln.ExpVar())
+	if expvar.Get("tls_listener") == nil {
+		expvar.Publish("tls_listener", rln.ExpVar())
+	}
 	defer rln.Close()
 	return srv.ServeTLS(rln, "", "")
 }
