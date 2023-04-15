@@ -52,6 +52,19 @@
                 "status"
             ]
         },{
+            "name": "TSPing",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/tailscale",
+            "args": [
+                                 "--socket",
+                  "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged",
+                  
+                "ping",
+                "100.64.0.4"
+            ]
+        },{
             "name": "Logout",
             "type": "go",
             "request": "launch",
