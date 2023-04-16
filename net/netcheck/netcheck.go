@@ -208,8 +208,7 @@ type Client struct {
 // reusing an existing UDP connection.
 type STUNConn interface {
 	WriteToUDPAddrPort([]byte, netip.AddrPort) (int, error)
-	WriteTo([]byte, net.Addr) (int, error)
-	ReadFrom([]byte) (int, net.Addr, error)
+	ReadFromUDPAddrPort([]byte) (int, netip.AddrPort, error)
 }
 
 func (c *Client) enoughRegions() int {
@@ -518,9 +517,14 @@ func nodeMight4(n *tailcfg.DERPNode) bool {
 	return ip.Is4()
 }
 
+type packetReaderFromCloser interface {
+	ReadFromUDPAddrPort([]byte) (int, netip.AddrPort, error)
+	io.Closer
+}
+
 // readPackets reads STUN packets from pc until there's an error or ctx is done.
 // In either case, it closes pc.
-func (c *Client) readPackets(ctx context.Context, pc net.PacketConn) {
+func (c *Client) readPackets(ctx context.Context, pc packetReaderFromCloser) {
 	done := make(chan struct{})
 	defer close(done)
 
@@ -534,7 +538,7 @@ func (c *Client) readPackets(ctx context.Context, pc net.PacketConn) {
 
 	var buf [64 << 10]byte
 	for {
-		n, addr, err := pc.ReadFrom(buf[:])
+		n, addr, err := pc.ReadFromUDPAddrPort(buf[:])
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -542,16 +546,11 @@ func (c *Client) readPackets(ctx context.Context, pc net.PacketConn) {
 			c.logf("ReadFrom: %v", err)
 			return
 		}
-		ua, ok := addr.(*net.UDPAddr)
-		if !ok {
-			c.logf("ReadFrom: unexpected addr %T", addr)
-			continue
-		}
 		pkt := buf[:n]
 		if !stun.Is(pkt) {
 			continue
 		}
-		if ap := netaddr.Unmap(ua.AddrPort()); ap.IsValid() {
+		if ap := netaddr.Unmap(addr); ap.IsValid() {
 			c.ReceiveSTUNPacket(pkt, ap)
 		}
 	}
@@ -903,7 +902,9 @@ func (c *Client) GetReport(ctx context.Context, dm *tailcfg.DERPMap) (_ *Report,
 	// So do that for now. In the future we might want to classify networks
 	// that do and don't require this separately. But for now help it.
 	const documentationIP = "203.0.113.1"
-	rs.pc4Hair.WriteTo([]byte("tailscale netcheck; see https://github.com/tailscale/tailscale/issues/188"), &net.UDPAddr{IP: net.ParseIP(documentationIP), Port: 12345})
+	rs.pc4Hair.WriteToUDPAddrPort(
+		[]byte("tailscale netcheck; see https://github.com/tailscale/tailscale/issues/188"),
+		netip.AddrPortFrom(netip.MustParseAddr(documentationIP), 12345))
 
 	if f := c.GetSTUNConn4; f != nil {
 		rs.pc4 = f()
