@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -164,6 +166,19 @@ For help on subcommands, add --help after: "mirage status --help".
 	}
 
 	localClient.Socket = rootArgs.socket
+
+	/*
+		if the Socket is like http://ip:port then we try to connect plain
+		http to a remote tailscaled for debug, without authentication
+	*/
+	parsedUrl, err := url.Parse(rootArgs.socket)
+	if err == nil {
+		localClient.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", parsedUrl.Host)
+		}
+	}
+
 	rootfs.Visit(func(f *flag.Flag) {
 		if f.Name == "socket" {
 			localClient.UseSocketOnly = true
