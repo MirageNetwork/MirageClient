@@ -30,6 +30,7 @@ import (
 	"tailscale.com/envknob"
 	"tailscale.com/ipn/ipnlocal"
 	"tailscale.com/ipn/ipnserver"
+	"tailscale.com/ipn/localapi"
 	"tailscale.com/ipn/store"
 	"tailscale.com/logtail/backoff"
 	"tailscale.com/net/dns"
@@ -214,6 +215,13 @@ func StartDaemon(ctx context.Context, logf logger.Logf, logID string) error { //
 		if err == nil {
 			logf("got LocalBackend in %v", time.Since(t0).Round(time.Millisecond))
 			srv.SetLocalBackend(lb)
+			if debugMux != nil {
+				lah := localapi.NewHandler(lb, logf, logPubID)
+				lah.PermitWrite = true
+				lah.PermitRead = true
+
+				debugMux.Handle("/", lah)
+			}
 			return
 		}
 		lbErr.Store(err) // before the following cancel
@@ -250,13 +258,15 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logid logid.PublicID
 	if _, ok := e.(wgengine.ResolvingEngine).GetResolver(); !ok {
 		panic("internal error: exit node resolver not wired up")
 	}
-	if debugMux != nil && debugPort > 0 && debugPort < 65536 {
-		if ig, ok := e.(wgengine.InternalsGetter); ok {
-			if _, mc, _, ok := ig.GetInternals(); ok {
-				debugMux.HandleFunc("/debug/magicsock", mc.ServeHTTPDebug)
+	if debugMode {
+		if debugMux != nil && debugPort > 0 && debugPort < 65536 {
+			if ig, ok := e.(wgengine.InternalsGetter); ok {
+				if _, mc, _, ok := ig.GetInternals(); ok {
+					debugMux.HandleFunc("/debug/magicsock", mc.ServeHTTPDebug)
+				}
 			}
+			go runDebugServer(debugMux, ":"+strconv.FormatInt(debugPort, 10))
 		}
-		go runDebugServer(debugMux, ":"+strconv.FormatInt(debugPort, 10))
 	}
 
 	ns, err := newNetstack(logf, dialer, e)

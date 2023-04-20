@@ -19,6 +19,7 @@ const defaultServerCode = "ipv4.uk"
 const socketPath = `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
 const enginePort = 0    //0 -动态端口机制
 const debugPort = 54321 // 调试信息页面端口
+const debugMode = false // 是否开启调试模式
 
 var programPath string = filepath.Join(os.Getenv("ProgramData"), serviceName)
 
