@@ -98,7 +98,22 @@ func likelyHomeRouterIPLinux() (ret netip.Addr, ok bool) {
 		}
 		log.Printf("interfaces: failed to read /proc/net/route: %v", err)
 	}
-	return ret, ret.IsValid()
+	if ret.IsValid() {
+		return ret, true
+	}
+	if lineNum >= maxProcNetRouteRead {
+		// If we went over our line limit without finding an answer, assume
+		// we're a big fancy Linux router (or at least not a home system)
+		// and set the error bit so we stop trying this in the future (and wasting CPU).
+		// See https://github.com/tailscale/tailscale/issues/7621.
+		//
+		// Remember that "likelyHomeRouterIP" exists purely to find the port
+		// mapping service (UPnP, PMP, PCP) often present on a home router. If we hit
+		// the route (line) limit without finding an answer, we're unlikely to ever
+		// find one in the future.
+		procNetRouteErr.Store(true)
+	}
+	return netip.Addr{}, false
 }
 
 // Android apps don't have permission to read /proc/net/route, at
@@ -152,8 +167,8 @@ func defaultRoute() (d DefaultRouteDetails, err error) {
 	// /proc/net/route. Use netlink to find the default route.
 	//
 	// TODO(bradfitz): this allocates a fair bit. We should track
-	// this in wgengine/monitor instead and have
-	// interfaces.GetState take a link monitor or similar so the
+	// this in net/interfaces/monitor instead and have
+	// interfaces.GetState take a netmon.Monitor or similar so the
 	// routing table can be cached and the monitor's existing
 	// subscription to route changes can update the cached state,
 	// rather than querying the whole thing every time like
