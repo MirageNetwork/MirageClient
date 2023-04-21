@@ -37,9 +37,18 @@ func TestRadioMonitor(t *testing.T) {
 			"active, 10 sec idle",
 			func(tt *testTime, rm *radioMonitor) {
 				rm.active()
-				tt.Add(10 * time.Second)
+				tt.Add(9 * time.Second)
 			},
-			50, // radio on 5 seconds of every 10 seconds
+			50, // radio on 5 seconds of 10 seconds
+		},
+		{
+			"active, spanning two seconds",
+			func(tt *testTime, rm *radioMonitor) {
+				rm.active()
+				tt.Add(1100 * time.Millisecond)
+				rm.active()
+			},
+			100, // radio on for 2 seconds
 		},
 		{
 			"400 iterations: 2 sec active, 1 min idle",
@@ -49,10 +58,18 @@ func TestRadioMonitor(t *testing.T) {
 					rm.active()
 					tt.Add(1 * time.Second)
 					rm.active()
-					tt.Add(1 * time.Minute)
+					tt.Add(59 * time.Second)
 				}
 			},
 			10, // radio on 6 seconds of every minute
+		},
+		{
+			"activity at end of time window",
+			func(tt *testTime, rm *radioMonitor) {
+				tt.Add(1 * time.Second)
+				rm.active()
+			},
+			50,
 		},
 	}
 

@@ -47,6 +47,7 @@ import (
 	"tailscale.com/net/netaddr"
 	"tailscale.com/net/netcheck"
 	"tailscale.com/net/neterror"
+	"tailscale.com/net/netmon"
 	"tailscale.com/net/netns"
 	"tailscale.com/net/packet"
 	"tailscale.com/net/portmapper"
@@ -64,11 +65,11 @@ import (
 	"tailscale.com/util/clientmetric"
 	"tailscale.com/util/mak"
 	"tailscale.com/util/ringbuffer"
+	"tailscale.com/util/set"
 	"tailscale.com/util/sysresources"
 	"tailscale.com/util/uniq"
 	"tailscale.com/version"
 	"tailscale.com/wgengine/capture"
-	"tailscale.com/wgengine/monitor"
 )
 
 const (
@@ -268,7 +269,6 @@ func (m *peerMap) deleteEndpoint(ep *endpoint) {
 }
 
 // A Conn routes UDP packets and actively manages a list of its endpoints.
-// It implements wireguard/conn.Bind.
 type Conn struct {
 	// This block mirrors the contents and field order of the Options
 	// struct. Initialized once at construction, then constant.
@@ -279,7 +279,7 @@ type Conn struct {
 	idleFunc               func() time.Duration // nil means unknown
 	testOnlyPacketListener nettype.PacketListener
 	noteRecvActivity       func(key.NodePublic) // or nil, see Options.NoteRecvActivity
-	linkMon                *monitor.Mon         // or nil
+	netMon                 *netmon.Monitor      // or nil
 
 	// ================================================================
 	// No locking required to access these fields, either because
@@ -419,6 +419,10 @@ type Conn struct {
 	// onEndpointRefreshed are funcs to run (in their own goroutines)
 	// when endpoints are refreshed.
 	onEndpointRefreshed map[*endpoint]func()
+
+	// endpointTracker tracks the set of cached endpoints that we advertise
+	// for a period of time before withdrawing them.
+	endpointTracker endpointTracker
 
 	// peerSet is the set of peers that are currently configured in
 	// WireGuard. These are not used to filter inbound or outbound
@@ -569,9 +573,9 @@ type Options struct {
 	// not hold Conn.mu while calling it.
 	NoteRecvActivity func(key.NodePublic)
 
-	// LinkMonitor is the link monitor to use.
+	// NetMon is the network monitor to use.
 	// With one, the portmapper won't be used.
-	LinkMonitor *monitor.Mon
+	NetMon *netmon.Monitor
 }
 
 func (o *Options) logf() logger.Logf {
@@ -638,11 +642,11 @@ func NewConn(opts Options) (*Conn, error) {
 	c.idleFunc = opts.IdleFunc
 	c.testOnlyPacketListener = opts.TestOnlyPacketListener
 	c.noteRecvActivity = opts.NoteRecvActivity
-	c.portMapper = portmapper.NewClient(logger.WithPrefix(c.logf, "portmapper: "), nil, c.onPortMapChanged)
-	if opts.LinkMonitor != nil {
-		c.portMapper.SetGatewayLookupFunc(opts.LinkMonitor.GatewayAndSelfIP)
+	c.portMapper = portmapper.NewClient(logger.WithPrefix(c.logf, "portmapper: "), opts.NetMon, nil, c.onPortMapChanged)
+	if opts.NetMon != nil {
+		c.portMapper.SetGatewayLookupFunc(opts.NetMon.GatewayAndSelfIP)
 	}
-	c.linkMon = opts.LinkMonitor
+	c.netMon = opts.NetMon
 
 	if err := c.rebind(keepCurrentPort); err != nil {
 		return nil, err
@@ -652,6 +656,7 @@ func NewConn(opts Options) (*Conn, error) {
 	c.donec = c.connCtx.Done()
 	c.netChecker = &netcheck.Client{
 		Logf:                logger.WithPrefix(c.logf, "netcheck: "),
+		NetMon:              c.netMon,
 		GetSTUNConn4:        func() netcheck.STUNConn { return &c.pconn4 },
 		GetSTUNConn6:        func() netcheck.STUNConn { return &c.pconn6 },
 		SkipExternalNetwork: inTest(),
@@ -1197,6 +1202,22 @@ func (c *Conn) determineEndpoints(ctx context.Context) ([]tailcfg.Endpoint, erro
 
 	c.ignoreSTUNPackets()
 
+	// Update our set of endpoints by adding any endpoints that we
+	// previously found but haven't expired yet. This also updates the
+	// cache with the set of endpoints discovered in this function.
+	//
+	// NOTE: we do this here and not below so that we don't cache local
+	// endpoints; we know that the local endpoints we discover are all
+	// possible local endpoints since we determine them by looking at the
+	// set of addresses on our local interfaces.
+	//
+	// TODO(andrew): If we pull in any cached endpoints, we should probably
+	// do something to ensure we're propagating the removal of those cached
+	// endpoints if they do actually time out without being rediscovered.
+	// For now, though, rely on a minor LinkChange event causing this to
+	// re-run.
+	eps = c.endpointTracker.update(time.Now(), eps)
+
 	if localAddr := c.pconn4.LocalAddr(); localAddr.IP.IsUnspecified() {
 		ips, loopback, err := interfaces.LocalAddresses()
 		if err != nil {
@@ -1280,6 +1301,9 @@ var errNetworkDown = errors.New("magicsock: network down")
 
 func (c *Conn) networkDown() bool { return !c.networkUp.Load() }
 
+// Send implements conn.Bind.
+//
+// See https://pkg.go.dev/golang.zx2c4.com/wireguard/conn#Bind.Send
 func (c *Conn) Send(buffs [][]byte, ep conn.Endpoint) error {
 	n := int64(len(buffs))
 	metricSendData.Add(n)
@@ -1531,7 +1555,7 @@ func (c *Conn) derpWriteChanOfAddr(addr netip.AddrPort, peer key.NodePublic) cha
 
 	// Note that derphttp.NewRegionClient does not dial the server
 	// (it doesn't block) so it is safe to do under the c.mu lock.
-	dc := derphttp.NewRegionClient(c.privateKey, c.logf, func() *tailcfg.DERPRegion {
+	dc := derphttp.NewRegionClient(c.privateKey, c.logf, c.netMon, func() *tailcfg.DERPRegion {
 		// Warning: it is not legal to acquire
 		// magicsock.Conn.mu from this callback.
 		// It's run from derphttp.Client.connect (via Send, etc)
@@ -1952,7 +1976,7 @@ func (c *connBind) receiveDERP(buffs [][]byte, sizes []int, eps []conn.Endpoint)
 	defer health.ReceiveDERP.Exit()
 
 	for dm := range c.derpRecvCh {
-		if c.Closed() {
+		if c.isClosed() {
 			break
 		}
 		n, ep := c.processDERPReadResult(dm, buffs[0])
@@ -2989,6 +3013,8 @@ func (c *Conn) DERPs() int {
 }
 
 // Bind returns the wireguard-go conn.Bind for c.
+//
+// See https://pkg.go.dev/golang.zx2c4.com/wireguard/conn#Bind
 func (c *Conn) Bind() conn.Bind {
 	return c.bind
 }
@@ -3004,6 +3030,12 @@ type connBind struct {
 	closed bool
 }
 
+var _ conn.Bind = (*connBind)(nil)
+
+// BatchSize returns the number of buffers expected to be passed to
+// the ReceiveFuncs, and the maximum expected to be passed to SendBatch.
+//
+// See https://pkg.go.dev/golang.zx2c4.com/wireguard/conn#Bind.BatchSize
 func (c *connBind) BatchSize() int {
 	// TODO(raggi): determine by properties rather than hardcoding platform behavior
 	switch runtime.GOOS {
@@ -3017,6 +3049,8 @@ func (c *connBind) BatchSize() int {
 // Open is called by WireGuard to create a UDP binding.
 // The ignoredPort comes from wireguard-go, via the wgcfg config.
 // We ignore that port value here, since we have the local port available easily.
+//
+// See https://pkg.go.dev/golang.zx2c4.com/wireguard/conn#Bind.Open
 func (c *connBind) Open(ignoredPort uint16) ([]conn.ReceiveFunc, uint16, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -3035,11 +3069,15 @@ func (c *connBind) Open(ignoredPort uint16) ([]conn.ReceiveFunc, uint16, error) 
 
 // SetMark is used by wireguard-go to set a mark bit for packets to avoid routing loops.
 // We handle that ourselves elsewhere.
+//
+// See https://pkg.go.dev/golang.zx2c4.com/wireguard/conn#Bind.SetMark
 func (c *connBind) SetMark(value uint32) error {
 	return nil
 }
 
 // Close closes the connBind, unless it is already closed.
+//
+// See https://pkg.go.dev/golang.zx2c4.com/wireguard/conn#Bind.Close
 func (c *connBind) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -3063,8 +3101,8 @@ func (c *connBind) Close() error {
 	return nil
 }
 
-// Closed reports whether c is closed.
-func (c *connBind) Closed() bool {
+// isClosed reports whether c is closed.
+func (c *connBind) isClosed() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closed
@@ -3123,7 +3161,6 @@ func (c *Conn) goroutinesRunningLocked() bool {
 	if c.activeDerp != nil {
 		select {
 		case <-c.derpStarted:
-			break
 		default:
 			return true
 		}
@@ -3215,7 +3252,7 @@ func (c *Conn) listenPacket(network string, port uint16) (nettype.PacketConn, er
 	if c.testOnlyPacketListener != nil {
 		return nettype.MakePacketListenerWithNetIP(c.testOnlyPacketListener).ListenPacket(ctx, network, addr)
 	}
-	return nettype.MakePacketListenerWithNetIP(netns.Listener(c.logf)).ListenPacket(ctx, network, addr)
+	return nettype.MakePacketListenerWithNetIP(netns.Listener(c.logf, c.netMon)).ListenPacket(ctx, network, addr)
 }
 
 var debugBindSocket = envknob.RegisterBool("TS_DEBUG_MAGICSOCK_BIND_SOCKET")
@@ -3333,8 +3370,8 @@ func (c *Conn) Rebind() {
 	}
 
 	var ifIPs []netip.Prefix
-	if c.linkMon != nil {
-		st := c.linkMon.InterfaceState()
+	if c.netMon != nil {
+		st := c.netMon.InterfaceState()
 		defIf := st.DefaultRouteInterface
 		ifIPs = st.InterfaceIPs[defIf]
 		c.logf("Rebind; defIf=%q, ips=%v", defIf, ifIPs)
@@ -3370,7 +3407,9 @@ func packIPPort(ua netip.AddrPort) []byte {
 	return b
 }
 
-// ParseEndpoint is called by WireGuard to connect to an endpoint.
+// ParseEndpoint implements conn.Bind; it's called by WireGuard to connect to an endpoint.
+//
+// See https://pkg.go.dev/golang.zx2c4.com/wireguard/conn#Bind.ParseEndpoint
 func (c *Conn) ParseEndpoint(nodeKeyStr string) (conn.Endpoint, error) {
 	k, err := key.ParseNodePublicUntyped(mem.S(nodeKeyStr))
 	if err != nil {
@@ -4130,6 +4169,11 @@ const (
 	// STUN-derived endpoint valid for. UDP NAT mappings typically
 	// expire at 30 seconds, so this is a few seconds shy of that.
 	endpointsFreshEnoughDuration = 27 * time.Second
+
+	// endpointTrackerLifetime is how long we continue advertising an
+	// endpoint after we last see it. This is intentionally chosen to be
+	// slightly longer than a full netcheck period.
+	endpointTrackerLifetime = 5*time.Minute + 10*time.Second
 )
 
 // Constants that are variable for testing.
@@ -5085,6 +5129,79 @@ func (s derpAddrFamSelector) PreferIPv6() bool {
 		return r.IPv6
 	}
 	return false
+}
+
+type endpointTrackerEntry struct {
+	endpoint tailcfg.Endpoint
+	until    time.Time
+}
+
+type endpointTracker struct {
+	mu    sync.Mutex
+	cache map[netip.AddrPort]endpointTrackerEntry
+}
+
+func (et *endpointTracker) update(now time.Time, eps []tailcfg.Endpoint) (epsPlusCached []tailcfg.Endpoint) {
+	epsPlusCached = eps
+
+	var inputEps set.Slice[netip.AddrPort]
+	for _, ep := range eps {
+		inputEps.Add(ep.Addr)
+	}
+
+	et.mu.Lock()
+	defer et.mu.Unlock()
+
+	// Add entries to the return array that aren't already there.
+	for k, ep := range et.cache {
+		// If the endpoint was in the input list, or has expired, skip it.
+		if inputEps.Contains(k) {
+			continue
+		} else if now.After(ep.until) {
+			continue
+		}
+
+		// We haven't seen this endpoint; add to the return array
+		epsPlusCached = append(epsPlusCached, ep.endpoint)
+	}
+
+	// Add entries from the original input array into the cache, and/or
+	// extend the lifetime of entries that are already in the cache.
+	until := now.Add(endpointTrackerLifetime)
+	for _, ep := range eps {
+		et.addLocked(now, ep, until)
+	}
+
+	// Remove everything that has now expired.
+	et.removeExpiredLocked(now)
+	return epsPlusCached
+}
+
+// add will store the provided endpoint(s) in the cache for a fixed period of
+// time, and remove any entries in the cache that have expired.
+//
+// et.mu must be held.
+func (et *endpointTracker) addLocked(now time.Time, ep tailcfg.Endpoint, until time.Time) {
+	// If we already have an entry for this endpoint, update the timeout on
+	// it; otherwise, add it.
+	entry, found := et.cache[ep.Addr]
+	if found {
+		entry.until = until
+	} else {
+		entry = endpointTrackerEntry{ep, until}
+	}
+	mak.Set(&et.cache, ep.Addr, entry)
+}
+
+// removeExpired will remove all expired entries from the cache
+//
+// et.mu must be held
+func (et *endpointTracker) removeExpiredLocked(now time.Time) {
+	for k, ep := range et.cache {
+		if now.After(ep.until) {
+			delete(et.cache, k)
+		}
+	}
 }
 
 var (

@@ -142,7 +142,7 @@ type LocalBackend struct {
 	store                 ipn.StateStore
 	dialer                *tsdial.Dialer // non-nil
 	backendLogID          logid.PublicID
-	unregisterLinkMon     func()
+	unregisterNetMon      func()
 	unregisterHealthWatch func()
 	portpoll              *portlist.Poller // may be nil
 	portpollOnce          sync.Once        // guards starting readPoller
@@ -313,7 +313,7 @@ func NewLocalBackend(logf logger.Logf, logID logid.PublicID, store ipn.StateStor
 		loginFlags:     loginFlags,
 	}
 
-	b.sockstatLogger, err = sockstatlog.NewLogger(logpolicy.LogsDir(logf), logf, logID)
+	b.sockstatLogger, err = sockstatlog.NewLogger(logpolicy.LogsDir(logf), logf, logID, e.GetNetMon())
 	if err != nil {
 		log.Printf("error setting up sockstat logger: %v", err)
 	}
@@ -330,12 +330,12 @@ func NewLocalBackend(logf logger.Logf, logID logid.PublicID, store ipn.StateStor
 	b.statusChanged = sync.NewCond(&b.statusLock)
 	b.e.SetStatusCallback(b.setWgengineStatus)
 
-	linkMon := e.GetLinkMonitor()
-	b.prevIfState = linkMon.InterfaceState()
+	netMon := e.GetNetMon()
+	b.prevIfState = netMon.InterfaceState()
 	// Call our linkChange code once with the current state, and
 	// then also whenever it changes:
-	b.linkChange(false, linkMon.InterfaceState())
-	b.unregisterLinkMon = linkMon.RegisterChangeCallback(b.linkChange)
+	b.linkChange(false, netMon.InterfaceState())
+	b.unregisterNetMon = netMon.RegisterChangeCallback(b.linkChange)
 
 	b.unregisterHealthWatch = health.RegisterWatcher(b.onHealthChange)
 
@@ -438,7 +438,7 @@ func (b *LocalBackend) SetComponentDebugLogging(component string, until time.Tim
 			// unchanged when the timer actually fires.
 			b.mu.Lock()
 			defer b.mu.Unlock()
-			if ls := b.componentLogUntil[component]; ls.until == until {
+			if ls := b.componentLogUntil[component]; ls.until.Equal(until) {
 				setEnabled(false)
 				b.logf("debugging logging for component %q disabled (by timer)", component)
 			}
@@ -499,7 +499,7 @@ func (b *LocalBackend) maybePauseControlClientLocked() {
 	b.cc.SetPaused((b.state == ipn.Stopped && b.netMap != nil) || !networkUp)
 }
 
-// linkChange is our link monitor callback, called whenever the network changes.
+// linkChange is our network monitor callback, called whenever the network changes.
 // major is whether ifst is different than earlier.
 func (b *LocalBackend) linkChange(major bool, ifst *interfaces.State) {
 	b.mu.Lock()
@@ -576,7 +576,7 @@ func (b *LocalBackend) Shutdown() {
 		b.sockstatLogger.Shutdown()
 	}
 
-	b.unregisterLinkMon()
+	b.unregisterNetMon()
 	b.unregisterHealthWatch()
 	if cc != nil {
 		cc.Shutdown()
@@ -1078,7 +1078,7 @@ func (b *LocalBackend) setClientStatus(st controlclient.Status) {
 		b.e.SetDERPMap(st.NetMap.DERPMap)
 
 		// Update our cached DERP map
-		dnsfallback.UpdateCache(st.NetMap.DERPMap)
+		dnsfallback.UpdateCache(st.NetMap.DERPMap, b.logf)
 
 		b.send(ipn.Notify{NetMap: st.NetMap})
 	}
@@ -1424,7 +1424,7 @@ func (b *LocalBackend) Start(opts ipn.Options) error {
 		HTTPTestClient:       httpTestClient,
 		DiscoPublicKey:       discoPublic,
 		DebugFlags:           debugFlags,
-		LinkMonitor:          b.e.GetLinkMonitor(),
+		NetMon:               b.e.GetNetMon(),
 		Pinger:               b,
 		PopBrowserURL:        b.tellClientToBrowseToURL,
 		OnClientVersion:      b.onClientVersion,

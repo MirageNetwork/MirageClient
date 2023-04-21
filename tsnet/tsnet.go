@@ -41,8 +41,8 @@ import (
 	"tailscale.com/logpolicy"
 	"tailscale.com/logtail"
 	"tailscale.com/logtail/filch"
-	"tailscale.com/net/dnsfallback"
 	"tailscale.com/net/memnet"
+	"tailscale.com/net/netmon"
 	"tailscale.com/net/proxymux"
 	"tailscale.com/net/socks5"
 	"tailscale.com/net/tsdial"
@@ -52,7 +52,6 @@ import (
 	"tailscale.com/types/nettype"
 	"tailscale.com/util/mak"
 	"tailscale.com/wgengine"
-	"tailscale.com/wgengine/monitor"
 	"tailscale.com/wgengine/netstack"
 )
 
@@ -107,7 +106,7 @@ type Server struct {
 	initErr          error
 	lb               *ipnlocal.LocalBackend
 	netstack         *netstack.Impl
-	linkMon          *monitor.Mon
+	netMon           *netmon.Monitor
 	rootPath         string // the state directory
 	hostname         string
 	shutdownCtx      context.Context
@@ -204,7 +203,7 @@ func (s *Server) Loopback() (addr string, proxyCred, localAPICred string, err er
 		// out the CONNECT code from tailscaled/proxy.go that uses
 		// httputil.ReverseProxy and adding auth support.
 		go func() {
-			lah := localapi.NewHandler(s.lb, s.logf, s.logid)
+			lah := localapi.NewHandler(s.lb, s.logf, s.netMon, s.logid)
 			lah.PermitWrite = true
 			lah.PermitRead = true
 			lah.RequiredPassword = s.localAPICred
@@ -357,8 +356,8 @@ func (s *Server) Close() error {
 	if s.lb != nil {
 		s.lb.Shutdown()
 	}
-	if s.linkMon != nil {
-		s.linkMon.Close()
+	if s.netMon != nil {
+		s.netMon.Close()
 	}
 	if s.dialer != nil {
 		s.dialer.Close()
@@ -477,17 +476,17 @@ func (s *Server) start() (reterr error) {
 		return err
 	}
 
-	s.linkMon, err = monitor.New(logf)
+	s.netMon, err = netmon.New(logf)
 	if err != nil {
 		return err
 	}
-	closePool.add(s.linkMon)
+	closePool.add(s.netMon)
 
 	s.dialer = &tsdial.Dialer{Logf: logf} // mutated below (before used)
 	eng, err := wgengine.NewUserspaceEngine(logf, wgengine.Config{
-		ListenPort:  0,
-		LinkMonitor: s.linkMon,
-		Dialer:      s.dialer,
+		ListenPort: 0,
+		NetMon:     s.netMon,
+		Dialer:     s.dialer,
 	})
 	if err != nil {
 		return err
@@ -565,7 +564,7 @@ func (s *Server) start() (reterr error) {
 	go s.printAuthURLLoop()
 
 	// Run the localapi handler, to allow fetching LetsEncrypt certs.
-	lah := localapi.NewHandler(lb, logf, s.logid)
+	lah := localapi.NewHandler(lb, logf, s.netMon, s.logid)
 	lah.PermitWrite = true
 	lah.PermitRead = true
 
@@ -621,7 +620,7 @@ func (s *Server) startLogger(closePool *closeOnErrorPool) error {
 			}
 			return w
 		},
-		HTTPC: &http.Client{Transport: logpolicy.NewLogtailTransport(logtail.DefaultHost)},
+		HTTPC: &http.Client{Transport: logpolicy.NewLogtailTransport(logtail.DefaultHost, s.netMon)},
 	}
 	s.logtail = logtail.NewLogger(c, s.logf)
 	closePool.addFunc(func() { s.logtail.Shutdown(context.Background()) })
@@ -640,7 +639,7 @@ func (p closeOnErrorPool) closeAllIfError(errp *error) {
 	}
 }
 
-func (s *Server) logf(format string, a ...interface{}) {
+func (s *Server) logf(format string, a ...any) {
 	if s.logtail != nil {
 		s.logtail.Logf(format, a...)
 	}
@@ -649,25 +648,6 @@ func (s *Server) logf(format string, a ...interface{}) {
 		return
 	}
 	log.Printf(format, a...)
-}
-
-// ReplaceGlobalLoggers will replace any Tailscale-specific package-global
-// loggers with this Server's logger. It returns a function that, when called,
-// will undo any changes made.
-//
-// Note that calling this function from multiple Servers will result in the
-// last call taking all logs; logs are not duplicated.
-func (s *Server) ReplaceGlobalLoggers() (undo func()) {
-	var undos []func()
-
-	oldDnsFallback := dnsfallback.SetLogger(s.logf)
-	undos = append(undos, func() { dnsfallback.SetLogger(oldDnsFallback) })
-
-	return func() {
-		for _, fn := range undos {
-			fn()
-		}
-	}
 }
 
 // printAuthURLLoop loops once every few seconds while the server is still running and
