@@ -24,6 +24,7 @@ import (
 	"tailscale.com/control/controlhttp"
 	"tailscale.com/net/dnscache"
 	"tailscale.com/net/dnsfallback"
+	"tailscale.com/net/netmon"
 	"tailscale.com/net/netutil"
 	"tailscale.com/net/tlsdial"
 	"tailscale.com/net/tsdial"
@@ -39,10 +40,16 @@ func (s *Server) createHttpc(dialer *tsdial.Dialer) *http.Client {
 		s.logf("failed to parse control URL %q: %v", s.ctrlURL, err)
 		return nil
 	}
+	netMon, err := netmon.New(log.Printf)
+	if err != nil {
+		log.Printf("Could not create netMon: %v", err)
+		netMon = nil
+	}
+	s.netMon = netMon
 	dnsCache := &dnscache.Resolver{
 		Forward:          dnscache.Get().Forward, // use default cache's forwarder
 		UseLastGood:      true,
-		LookupIPFallback: dnsfallback.Lookup,
+		LookupIPFallback: dnsfallback.MakeLookupFunc(s.logf, netMon),
 		Logf:             s.logf,
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
@@ -93,7 +100,7 @@ func (s *Server) prepareNoiseClient() error {
 	var sfGroup singleflight.Group[struct{}, *controlclient.NoiseClient]
 	s.nc, err, _ = sfGroup.Do(struct{}{}, func() (*controlclient.NoiseClient, error) {
 		s.logf("creating new noise client")
-		nc, err := controlclient.NewNoiseClient(s.naviPriKey, keys.PublicKey, s.ctrlURL, dialer, nil)
+		nc, err := controlclient.NewNoiseClient(s.naviPriKey, keys.PublicKey, s.ctrlURL, dialer, s.logf, s.netMon, nil)
 		if err != nil {
 			return nil, err
 		}

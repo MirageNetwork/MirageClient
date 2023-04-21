@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 // The derper binary is a simple DERP server.
+
 package main // import "tailscale.com/cmd/derper"
 
 import (

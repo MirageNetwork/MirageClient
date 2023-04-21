@@ -34,6 +34,7 @@ import (
 	"tailscale.com/logtail/backoff"
 	"tailscale.com/net/dns"
 	"tailscale.com/net/dnsfallback"
+	"tailscale.com/net/netmon"
 	"tailscale.com/net/netns"
 	"tailscale.com/net/tsdial"
 	"tailscale.com/net/tstun"
@@ -47,7 +48,6 @@ import (
 	"tailscale.com/version"
 	"tailscale.com/wf"
 	"tailscale.com/wgengine"
-	"tailscale.com/wgengine/monitor"
 	"tailscale.com/wgengine/netstack"
 	"tailscale.com/wgengine/router"
 )
@@ -97,10 +97,10 @@ func beWindowsSubprocess() bool {
 		log.Fatalf("Cannot load wintun.dll for daemon: %v", err)
 	}
 
-	logid := args.logid // 传入的logtail ID
+	logID := args.logid // 传入的logtail ID
 
 	log.Printf("Program starting: v%v: %#v", version.Long(), os.Args)
-	log.Printf("subproc mode: logid=%v", logid)
+	log.Printf("subproc mode: logid=%v", logID)
 	if err := envknob.ApplyDiskConfigError(); err != nil {
 		log.Printf("Error reading environment config: %v", err)
 	}
@@ -122,7 +122,14 @@ func beWindowsSubprocess() bool {
 		}
 	}()
 
-	err = StartDaemon(ctx, log.Printf, logid)
+	netMon, err := netmon.New(log.Printf)
+	if err != nil {
+		log.Printf("Could not create netMon: %v", err)
+		netMon = nil
+	}
+	publicLogID, _ := logid.ParsePublicID(logID)
+
+	err = StartDaemon(ctx, log.Printf, publicLogID, netMon)
 	if err != nil {
 		log.Fatalf("ipnserver: %v", err)
 	}
@@ -169,7 +176,7 @@ func beFirewallKillswitch() bool {
 }
 
 // 实际创建daemon IPN
-func StartDaemon(ctx context.Context, logf logger.Logf, logID string) error { // lbChn chan *ipnlocal.LocalBackend) {
+func StartDaemon(ctx context.Context, logf logger.Logf, logID logid.PublicID, netMon *netmon.Monitor) error { // lbChn chan *ipnlocal.LocalBackend) {
 	ln, err := safesocket.Listen(socketPath)
 	if err != nil {
 		return fmt.Errorf("safesocket.Listen: %v", err)
@@ -191,11 +198,7 @@ func StartDaemon(ctx context.Context, logf logger.Logf, logID string) error { //
 		}
 	}()
 
-	logPubID, err := logid.ParsePublicID(logID)
-	if err != nil {
-		return fmt.Errorf("logid.ParsePublicID: %v", err)
-	}
-	srv := ipnserver.New(logf, logPubID)
+	srv := ipnserver.New(logf, logID, netMon)
 
 	// 先留调试接口
 	debugMux = http.NewServeMux()
@@ -210,7 +213,7 @@ func StartDaemon(ctx context.Context, logf logger.Logf, logID string) error { //
 
 	go func() {
 		t0 := time.Now()
-		lb, err := getLocalBackend(ctx, logf, logPubID)
+		lb, err := getLocalBackend(ctx, logf, logID, netMon)
 		if err == nil {
 			logf("got LocalBackend in %v", time.Since(t0).Round(time.Millisecond))
 			srv.SetLocalBackend(lb)
@@ -233,17 +236,13 @@ func StartDaemon(ctx context.Context, logf logger.Logf, logID string) error { //
 	return nil
 }
 
-func getLocalBackend(ctx context.Context, logf logger.Logf, logid logid.PublicID) (_ *ipnlocal.LocalBackend, retErr error) {
-	linkMon, err := monitor.New(logf)
-	if err != nil {
-		return nil, fmt.Errorf("monitor.New: %w", err)
-	}
+func getLocalBackend(ctx context.Context, logf logger.Logf, logid logid.PublicID, netMon *netmon.Monitor) (_ *ipnlocal.LocalBackend, retErr error) {
 	if logPol != nil {
-		logPol.Logtail.SetLinkMonitor(linkMon)
+		logPol.Logtail.SetNetMon(netMon)
 	}
 
 	dialer := &tsdial.Dialer{Logf: logf} // mutated below (before used)
-	e, onlyNetstack, err := createEngine(logf, linkMon, dialer)
+	e, onlyNetstack, err := createEngine(logf, netMon, dialer)
 	if err != nil {
 		return nil, fmt.Errorf("createEngine: %w", err)
 	}
@@ -297,7 +296,7 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logid logid.PublicID
 		lb.SetLogFlusher(logPol.Logtail.StartFlush)
 	}
 	if root := lb.TailscaleVarRoot(); root != "" {
-		dnsfallback.SetCachePath(filepath.Join(root, "derpmap.cached.json"))
+		dnsfallback.SetCachePath(filepath.Join(root, "derpmap.cached.json"), logf)
 	}
 	lb.SetDecompressor(func() (controlclient.Decompressor, error) {
 		return smallzstd.NewDecoder(nil)
@@ -309,11 +308,11 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logid logid.PublicID
 	return lb, nil
 }
 
-func createEngine(logf logger.Logf, linkMon *monitor.Mon, dialer *tsdial.Dialer) (e wgengine.Engine, onlyNetstack bool, err error) {
+func createEngine(logf logger.Logf, netMon *netmon.Monitor, dialer *tsdial.Dialer) (e wgengine.Engine, onlyNetstack bool, err error) {
 	var errs []error
 	for _, name := range strings.Split(serviceName, ",") {
 		logf("wgengine.NewUserspaceEngine(tun %q) ...", name)
-		e, onlyNetstack, err = tryEngine(logf, linkMon, dialer, name)
+		e, onlyNetstack, err = tryEngine(logf, netMon, dialer, name)
 		if err == nil {
 			return e, onlyNetstack, nil
 		}
@@ -325,11 +324,11 @@ func createEngine(logf logger.Logf, linkMon *monitor.Mon, dialer *tsdial.Dialer)
 
 var tstunNew = tstun.New
 
-func tryEngine(logf logger.Logf, linkMon *monitor.Mon, dialer *tsdial.Dialer, name string) (e wgengine.Engine, onlyNetstack bool, err error) {
+func tryEngine(logf logger.Logf, netMon *netmon.Monitor, dialer *tsdial.Dialer, name string) (e wgengine.Engine, onlyNetstack bool, err error) {
 	conf := wgengine.Config{
-		ListenPort:  enginePort,
-		LinkMonitor: linkMon,
-		Dialer:      dialer,
+		ListenPort: enginePort,
+		NetMon:     netMon,
+		Dialer:     dialer,
 	}
 	onlyNetstack = false
 	netns.SetEnabled(true)
@@ -348,7 +347,7 @@ func tryEngine(logf logger.Logf, linkMon *monitor.Mon, dialer *tsdial.Dialer, na
 			return e, false, err
 		}
 
-		r, err := router.New(logf, dev, linkMon)
+		r, err := router.New(logf, dev, netMon)
 		if err != nil {
 			dev.Close()
 			return nil, false, fmt.Errorf("creating router: %w", err)

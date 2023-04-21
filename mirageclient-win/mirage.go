@@ -12,6 +12,7 @@ import (
 	"tailscale.com/envknob"
 	"tailscale.com/logpolicy"
 	"tailscale.com/logtail"
+	"tailscale.com/net/netmon"
 	"tailscale.com/types/logger"
 	"tailscale.com/util/osshare"
 	"tailscale.com/util/winutil"
@@ -49,7 +50,15 @@ func main() {
 		// 开局先屏蔽TS的日志 （但后续保留日志设置，以防后续我们希望使用logtail）
 		envknob.SetNoLogsNoSupport()
 
-		pol := logpolicy.New(logtail.CollectionNode)
+		var logf logger.Logf = log.Printf
+		netMon, err := netmon.New(func(format string, args ...any) {
+			logf(format, args...)
+		})
+		if err != nil {
+			logf("netmon.New: %v", err)
+			return
+		}
+		pol := logpolicy.New(logtail.CollectionNode, netMon)
 		pol.SetVerbosityLevel(0) // 日志级别，越往上级别越高
 		logPol = pol
 		defer func() {

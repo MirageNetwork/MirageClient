@@ -41,6 +41,7 @@ import (
 	"tailscale.com/disco"
 	"tailscale.com/envknob"
 	"tailscale.com/metrics"
+	"tailscale.com/net/netmon"
 	"tailscale.com/syncs"
 	"tailscale.com/tstime/rate"
 	"tailscale.com/types/key"
@@ -101,6 +102,8 @@ type Server struct {
 	naviPriKey key.MachinePrivate         // 用于和控制器进行请求
 	ctx        context.Context            // noise请求上下文
 	nc         *controlclient.NoiseClient // 用于和控制器进行请求
+
+	netMon *netmon.Monitor // or nil
 
 	trustNodesCache *cache.Cache // 用于存储受信客户端信息
 	Cronjob         *cron.Cron   // 用于定时从控制器拉取受信客户端信息
