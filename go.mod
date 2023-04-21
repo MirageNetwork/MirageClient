@@ -107,10 +107,13 @@ require (
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.597 // indirect
 )
 
-require gopkg.in/Knetic/govaluate.v3 v3.0.0 // indirect
+require (
+	4d63.com/gocheckcompilerdirectives v1.2.1 // indirect
+	gopkg.in/Knetic/govaluate.v3 v3.0.0 // indirect
+)
 
 require (
-	4d63.com/gochecknoglobals v0.1.0 // indirect
+	4d63.com/gochecknoglobals v0.2.1 // indirect
 	filippo.io/edwards25519 v1.0.0-rc.1 // indirect
 	github.com/Abirdcfly/dupword v0.0.11 // indirect
 	github.com/Antonboom/errname v0.1.9 // indirect
@@ -250,11 +253,11 @@ require (
 	github.com/ldez/gomoddirectives v0.2.3 // indirect
 	github.com/ldez/tagliatelle v0.4.0 // indirect
 	github.com/leonklingele/grouper v1.1.1 // indirect
-	github.com/lufeee/execinquery v1.2.1 // indirect
 	github.com/libdns/alidns v1.0.2
 	github.com/libdns/cloudflare v0.1.0
 	github.com/libdns/namesilo v0.1.0
 	github.com/libdns/tencentcloud v1.0.0
+	github.com/lufeee/execinquery v1.2.1 // indirect
 	github.com/magiconair/properties v1.8.6 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/maratori/testableexamples v1.0.0 // indirect
