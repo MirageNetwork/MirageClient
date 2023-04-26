@@ -74,10 +74,7 @@ func (m *MiraMenu) DoLogin() {
 				go m.SendNotify("设置服务器代码出错", err.Error(), NL_Error)
 				return
 			}
-			m.control_url = "https://sdp." + newServerCode
-			if !strings.Contains(newServerCode, ".") {
-				m.control_url = m.control_url + ".com"
-			}
+			m.control_url = "https://" + newServerCode
 			st, err := m.lc.Status(m.ctx)
 			if err != nil {
 				go m.SendNotify("获取状态出错", err.Error(), NL_Error)
@@ -90,10 +87,7 @@ func (m *MiraMenu) DoLogin() {
 		}
 	} else {
 		serverCode := string(serverCodeData)
-		m.control_url = "https://sdp." + serverCode
-		if !strings.Contains(serverCode, ".") {
-			m.control_url = m.control_url + ".com"
-		}
+		m.control_url = "https://" + serverCode
 
 		st, err := m.lc.Status(m.ctx)
 		if err != nil {
