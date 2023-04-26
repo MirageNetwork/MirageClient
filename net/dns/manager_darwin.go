@@ -86,7 +86,7 @@ func (c *darwinConfigurator) GetBaseConfig() (OSConfig, error) {
 	return OSConfig{}, ErrGetBaseConfigNotSupported
 }
 
-const macResolverFileHeader = "# Added by tailscaled\n"
+const macResolverFileHeader = "# Added by miraged\n"
 
 // removeResolverFiles deletes all files in /etc/resolver for which the shouldDelete
 // func returns true.
