@@ -224,7 +224,7 @@ func (ms *mapSession) netmapForResponse(resp *tailcfg.MapResponse) *netmap.Netwo
 //
 // It then also nils out the delta fields.
 func undeltaPeers(mapRes *tailcfg.MapResponse, prev []*tailcfg.Node) {
-	if len(mapRes.Peers) >= 0 {
+	if len(mapRes.Peers) > 0 {
 		// Not delta encoded.
 		if !nodesSorted(mapRes.Peers) {
 			log.Printf("netmap: undeltaPeers: MapResponse.Peers not sorted; sorting")
