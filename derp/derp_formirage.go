@@ -97,10 +97,27 @@ func (s *Server) prepareNoiseClient() error {
 	}
 	s.ctrlPubkey = keys.PublicKey
 
+	s.dnsCache = &dnscache.Resolver{
+		Forward:          dnscache.Get().Forward, // use default cache's forwarder
+		UseLastGood:      true,
+		LookupIPFallback: dnsfallback.MakeLookupFunc(s.logf, s.netMon),
+		Logf:             s.logf,
+		NetMon:           s.netMon,
+	}
 	var sfGroup singleflight.Group[struct{}, *controlclient.NoiseClient]
 	s.nc, err, _ = sfGroup.Do(struct{}{}, func() (*controlclient.NoiseClient, error) {
 		s.logf("creating new noise client")
-		nc, err := controlclient.NewNoiseClient(s.naviPriKey, keys.PublicKey, s.ctrlURL, dialer, s.logf, s.netMon, nil)
+
+		nc, err := controlclient.NewNoiseClient(controlclient.NoiseOpts{
+			PrivKey:      s.naviPriKey,
+			ServerPubKey: keys.PublicKey,
+			ServerURL:    s.ctrlURL,
+			Dialer:       dialer,
+			DNSCache:     s.dnsCache,
+			Logf:         s.logf,
+			NetMon:       s.netMon,
+			DialPlan:     nil,
+		})
 		if err != nil {
 			return nil, err
 		}
