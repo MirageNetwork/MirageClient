@@ -13,6 +13,7 @@ import (
 	"tailscale.com/logpolicy"
 	"tailscale.com/logtail"
 	"tailscale.com/net/netmon"
+	"tailscale.com/tsd"
 	"tailscale.com/types/logger"
 	"tailscale.com/util/osshare"
 	"tailscale.com/util/winutil"
@@ -51,6 +52,9 @@ func main() {
 		envknob.SetNoLogsNoSupport()
 
 		var logf logger.Logf = log.Printf
+
+		sys := new(tsd.System)
+
 		netMon, err := netmon.New(func(format string, args ...any) {
 			logf(format, args...)
 		})
@@ -58,6 +62,8 @@ func main() {
 			logf("netmon.New: %v", err)
 			return
 		}
+		sys.Set(netMon)
+
 		pol := logpolicy.New(logtail.CollectionNode, netMon)
 		pol.SetVerbosityLevel(0) // 日志级别，越往上级别越高
 		logPol = pol

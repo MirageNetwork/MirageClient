@@ -1,4 +1,5 @@
 //go:build windows
+
 package main
 
 import (
@@ -8,10 +9,12 @@ import (
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/eventlog"
 	"golang.zx2c4.com/wintun"
 	"tailscale.com/logpolicy"
 	"tailscale.com/net/dns"
 	"tailscale.com/types/logger"
+	"tailscale.com/util/winutil"
 )
 
 type ipnService struct {
@@ -26,6 +29,16 @@ var syslogf logger.Logf = logger.Discard
 
 // 运行Windows服务（实质实现了Execute钩子给Windows Service Manager
 func runWindowsService(pol *logpolicy.Policy) error {
+	if winutil.GetPolicyInteger("LogSCMInteractions", 0) != 0 {
+		syslog, err := eventlog.Open(serviceName)
+		if err == nil {
+			syslogf = func(format string, args ...any) {
+				syslog.Info(0, fmt.Sprintf(format, args...))
+			}
+			defer syslog.Close()
+		}
+	}
+
 	syslogf("Service entering svc.Run")
 	defer syslogf("Service exiting svc.Run")
 	return svc.Run(serviceName, &ipnService{Policy: pol})
@@ -37,7 +50,10 @@ func (service *ipnService) Execute(args []string, r <-chan svc.ChangeRequest, ch
 	changes <- svc.Status{State: svc.StartPending}
 	syslogf("Service start pending")
 
-	svcAccepts := svc.AcceptStop | svc.AcceptSessionChange
+	svcAccepts := svc.AcceptStop
+	if winutil.GetPolicyInteger("FlushDNSOnSessionUnlock", 0) != 0 {
+		svcAccepts |= svc.AcceptSessionChange
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

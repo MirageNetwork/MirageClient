@@ -12,8 +12,11 @@
             "mode": "auto",
             "program": "${workspaceFolder}/mirageclient-win",
             "args": [
-                "-debugD",
+//                "-debugD",
 //                 "\\\\.\\pipe\\ProtectedPrefix\\Administrators\\Mirage\\miraged"
+                "-subproc",
+                "-logid",
+                "9860f9e07d9c39d3757ac879556df4418715965a498ae3c64e4c20282450bc72"
             ]
         },{
             "name": "client-GUI",
