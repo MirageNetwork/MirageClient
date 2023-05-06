@@ -8,6 +8,7 @@
 *.spk
 __debug_bin
 mirageNavi
+.DS_Store
 
 *__debug_bin
 
