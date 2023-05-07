@@ -34,7 +34,7 @@ cmd/tailscaled/tailscaled
 .envrc
 
 # Ignore personal VS Code settings
-#.vscode/
+.vscode/
 
 # Support personal project-specific GOPATH
 .gopath/
