@@ -132,7 +132,7 @@ var getEmbeddedInfo = lazy.SyncFunc(func() embeddedInfo {
 				ret.commitDate = strings.ReplaceAll(ret.commitDate, "-", "")
 			}
 		case "vcs.modified":
-			ret.dirty = true
+			ret.dirty = (s.Value == "true")
 		}
 	}
 	if ret.commit == "" || ret.commitDate == "" {
