@@ -80,14 +80,27 @@
 
             ]
         },{
-            "name": "Login TS",
+            "name": "TS UP",
             "type": "go",
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/tailscale",
             "args": [
-                "up"
-            ]
+                "up",
+                "--accept-dns=false",
+            ],
+            "console": "integratedTerminal"
+        },{
+            "name": "TS Login",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/tailscale",
+            "args": [
+                "login",
+                "-help"
+            ],
+            "console": "integratedTerminal"
         },{
             "name": "Version",
             "type": "go",

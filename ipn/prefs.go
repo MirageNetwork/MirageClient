@@ -29,7 +29,7 @@ import (
 // DefaultControlURL is the URL base of the control plane
 // ("coordination server") for use when no explicit one is configured.
 // The default control plane is the hosted version run by Tailscale.com.
-const DefaultControlURL = "https://sdp.ipv4.uk"
+const DefaultControlURL = "https://sdp.nopkt.com"
 
 var (
 	// ErrExitNodeIDAlreadySet is returned from (*Prefs).SetExitNodeIP when the
@@ -491,7 +491,7 @@ func (p *Prefs) AdminPageURL() string {
 	url := p.ControlURLOrDefault()
 	if IsLoginServerSynonym(url) {
 		// TODO(crawshaw): In future release, make this https://console.tailscale.com
-		url = "https://sdp.ipv4.uk"
+		url = "https://sdp.nopkt.com"
 	}
 	return url + "/admin"
 }

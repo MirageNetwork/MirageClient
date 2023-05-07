@@ -15,7 +15,7 @@ import (
 )
 
 const serviceName = "Mirage"
-const defaultServerCode = "sdp.ipv4.uk"
+const defaultServerCode = "sdp.nopkt.com"
 const socketPath = `\\.\pipe\ProtectedPrefix\Administrators\Mirage\miraged`
 const enginePort = 0    //0 -动态端口机制
 const debugPort = 54321 // 调试信息页面端口

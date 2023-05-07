@@ -92,7 +92,7 @@ func TestContainerBoot(t *testing.T) {
 	}
 
 	argFile := filepath.Join(d, "args")
-	runningSockPath := filepath.Join(d, "tmp/tailscaled.sock")
+	runningSockPath := filepath.Join(d, "tmp/miraged.sock")
 
 	type phase struct {
 		// If non-nil, send this IPN bus notification (and remember it as the
@@ -749,7 +749,7 @@ type localAPI struct {
 }
 
 func (l *localAPI) Start() error {
-	path := filepath.Join(l.FSRoot, "tmp/tailscaled.sock.fake")
+	path := filepath.Join(l.FSRoot, "tmp/miraged.sock.fake")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}

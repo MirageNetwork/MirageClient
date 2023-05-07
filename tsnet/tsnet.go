@@ -514,7 +514,7 @@ func (s *Server) start() (reterr error) {
 	}
 
 	if s.Store == nil {
-		stateFile := filepath.Join(s.rootPath, "tailscaled.state")
+		stateFile := filepath.Join(s.rootPath, "miraged.state")
 		logf("tsnet running state path %s", stateFile)
 		s.Store, err = store.New(logf, stateFile)
 		if err != nil {
@@ -587,7 +587,7 @@ func (s *Server) startLogger(closePool *closeOnErrorPool) error {
 	if inTest() {
 		return nil
 	}
-	cfgPath := filepath.Join(s.rootPath, "tailscaled.log.conf")
+	cfgPath := filepath.Join(s.rootPath, "miraged.log.conf")
 	lpc, err := logpolicy.ConfigFromFile(cfgPath)
 	switch {
 	case os.IsNotExist(err):
@@ -603,7 +603,7 @@ func (s *Server) startLogger(closePool *closeOnErrorPool) error {
 	}
 	s.logid = lpc.PublicID
 
-	s.logbuffer, err = filch.New(filepath.Join(s.rootPath, "tailscaled"), filch.Options{ReplaceStderr: false})
+	s.logbuffer, err = filch.New(filepath.Join(s.rootPath, "miraged"), filch.Options{ReplaceStderr: false})
 	if err != nil {
 		return fmt.Errorf("error creating filch: %w", err)
 	}

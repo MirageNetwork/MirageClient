@@ -371,7 +371,7 @@ func (up *updater) updateWindows() error {
 		return errors.New("must be run as Administrator")
 	}
 
-	tsDir := filepath.Join(os.Getenv("ProgramData"), "Tailscale")
+	tsDir := filepath.Join(os.Getenv("ProgramData"), "Mirage")
 	msiDir := filepath.Join(tsDir, "MSICache")
 	if fi, err := os.Stat(tsDir); err != nil {
 		return fmt.Errorf("expected %s to exist, got stat error: %w", tsDir, err)

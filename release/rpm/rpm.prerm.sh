@@ -3,6 +3,6 @@
 
 if [ $1 -eq 0 ] ; then 
         # Package removal, not upgrade 
-        systemctl --no-reload disable tailscaled.service > /dev/null 2>&1 || : 
-        systemctl stop tailscaled.service > /dev/null 2>&1 || : 
+        systemctl --no-reload disable miraged.service > /dev/null 2>&1 || : 
+        systemctl stop miraged.service > /dev/null 2>&1 || : 
 fi

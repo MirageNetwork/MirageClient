@@ -22,6 +22,7 @@ import (
 	"golang.org/x/exp/slices"
 	"tailscale.com/client/tailscale"
 	"tailscale.com/envknob"
+	"tailscale.com/ipn"
 	"tailscale.com/paths"
 	"tailscale.com/version/distro"
 )
@@ -89,17 +90,17 @@ func Run(args []string) (err error) {
 	var warnOnce sync.Once
 	tailscale.SetVersionMismatchHandler(func(clientVer, serverVer string) {
 		warnOnce.Do(func() {
-			fmt.Fprintf(Stderr, "Warning: client version %q != tailscaled server version %q\n", clientVer, serverVer)
+			fmt.Fprintf(Stderr, "Warning: client version %q != miraged server version %q\n", clientVer, serverVer)
 		})
 	})
 
-	rootfs := newFlagSet("tailscale")
-	rootfs.StringVar(&rootArgs.socket, "socket", paths.DefaultTailscaledSocket(), "path to tailscaled socket")
+	rootfs := newFlagSet("mirage")
+	rootfs.StringVar(&rootArgs.socket, "socket", paths.DefaultTailscaledSocket(), "path to miraged socket")
 
 	rootCmd := &ffcli.Command{
-		Name:       "tailscale",
+		Name:       "mirage",
 		ShortUsage: "mirage [flags] <subcommand> [command flags]",
-		ShortHelp:  "The easiest, most secure way to connect together.",
+		ShortHelp:  "The second easy, second secure way to connect together.",
 		LongHelp: strings.TrimSpace(`
 For help on subcommands, add --help after: "mirage status --help".
 `),
@@ -112,22 +113,12 @@ For help on subcommands, add --help after: "mirage status --help".
 			setCmd,
 			loginCmd,
 			logoutCmd,
-			//			switchCmd,
-			configureCmd,
 			netcheckCmd,
 			ipCmd,
 			statusCmd,
 			pingCmd,
-			//			ncCmd,
-			//			sshCmd,
-			funnelCmd,
-			serveCmd,
 			versionCmd,
-			//			webCmd,
-			//			fileCmd,
 			//			bugReportCmd,
-			//			certCmd,
-			//			netlockCmd,
 			//			licensesCmd,
 		},
 		FlagSet:   rootfs,
@@ -147,6 +138,26 @@ For help on subcommands, add --help after: "mirage status --help".
 
 	// Don't advertise these commands, but they're still explicitly available.
 	switch {
+	case slices.Contains(args, "lock"):
+		rootCmd.Subcommands = append(rootCmd.Subcommands, netlockCmd)
+	case slices.Contains(args, "cert"):
+		rootCmd.Subcommands = append(rootCmd.Subcommands, certCmd)
+	case slices.Contains(args, "web"):
+		rootCmd.Subcommands = append(rootCmd.Subcommands, webCmd)
+	case slices.Contains(args, "file"):
+		rootCmd.Subcommands = append(rootCmd.Subcommands, fileCmd)
+	case slices.Contains(args, "serve"):
+		rootCmd.Subcommands = append(rootCmd.Subcommands, serveCmd)
+	case slices.Contains(args, "funnel"):
+		rootCmd.Subcommands = append(rootCmd.Subcommands, funnelCmd)
+	case slices.Contains(args, "ssh"):
+		rootCmd.Subcommands = append(rootCmd.Subcommands, sshCmd)
+	case slices.Contains(args, "nc"):
+		rootCmd.Subcommands = append(rootCmd.Subcommands, ncCmd)
+	case slices.Contains(args, "switch"):
+		rootCmd.Subcommands = append(rootCmd.Subcommands, switchCmd)
+	case slices.Contains(args, "configure"):
+		rootCmd.Subcommands = append(rootCmd.Subcommands, configureCmd)
 	case slices.Contains(args, "debug"):
 		rootCmd.Subcommands = append(rootCmd.Subcommands, debugCmd)
 	case slices.Contains(args, "update"):
@@ -156,11 +167,44 @@ For help on subcommands, add --help after: "mirage status --help".
 		rootCmd.Subcommands = append(rootCmd.Subcommands, configureHostCmd)
 	}
 
+	backRootCmd := *rootCmd
+	backRootfs := *rootfs
+	backRootCmd.FlagSet = &backRootfs
+	backRootCmd.Subcommands = []*ffcli.Command{}
+	for _, c := range rootCmd.Subcommands {
+		if c.Name == "up" || c.Name == "login" {
+			backCmd := *c
+			backRootCmd.Subcommands = append(backRootCmd.Subcommands, &backCmd)
+		}
+	}
+
 	if err := rootCmd.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
+	}
+
+	if (slices.Contains(args, "up") || slices.Contains(args, "login")) && !slices.Contains(args, "--login-server") {
+		var serverCode string
+		fmt.Println("Please specify a controller server (Enter to use default): ")
+		fmt.Scanln(&serverCode)
+		if strings.Trim(serverCode, " ") != "" {
+			if !strings.HasPrefix(serverCode, "https://") && !strings.HasPrefix(serverCode, "http://") {
+				serverCode = "https://" + serverCode
+			}
+		} else {
+			serverCode = ipn.DefaultControlURL
+		}
+		args = append(args, "--login-server", serverCode)
+
+		rootCmd = &backRootCmd
+		if err := rootCmd.Parse(args); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return nil
+			}
+			return err
+		}
 	}
 
 	localClient.Socket = rootArgs.socket
@@ -172,7 +216,7 @@ For help on subcommands, add --help after: "mirage status --help".
 
 	err = rootCmd.Run(context.Background())
 	if tailscale.IsAccessDeniedError(err) && os.Getuid() != 0 && runtime.GOOS != "windows" {
-		return fmt.Errorf("%v\n\nUse 'sudo tailscale %s' or 'tailscale up --operator=$USER' to not require root.", err, strings.Join(args, " "))
+		return fmt.Errorf("%v\n\nUse 'sudo mirage %s' or 'mirage up --operator=$USER' to not require root.", err, strings.Join(args, " "))
 	}
 	if errors.Is(err, flag.ErrHelp) {
 		return nil

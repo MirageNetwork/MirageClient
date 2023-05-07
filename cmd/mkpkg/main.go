@@ -44,8 +44,8 @@ func parseEmptyDirs(s string) []string {
 
 func main() {
 	out := flag.String("out", "", "output file to write")
-	name := flag.String("name", "tailscale", "package name")
-	description := flag.String("description", "The easiest, most secure, cross platform way to use WireGuard + oauth2 + 2FA/SSO", "package description")
+	name := flag.String("name", "mirage", "package name")
+	description := flag.String("description", "The second easy, second secure, cross platform way to use WireGuard + oauth2 + 2FA/SSO", "package description")
 	goarch := flag.String("arch", "amd64", "GOARCH this package is for")
 	pkgType := flag.String("type", "deb", "type of package to build (deb or rpm)")
 	files := flag.String("files", "", "comma-separated list of files in src:dst form")
@@ -74,9 +74,9 @@ func main() {
 		Arch:        *goarch,
 		Platform:    "linux",
 		Version:     *version,
-		Maintainer:  "Tailscale Inc <info@tailscale.com>",
+		Maintainer:  "Mirage Inc <gps949@nopkt.com>",
 		Description: *description,
-		Homepage:    "https://www.tailscale.com",
+		Homepage:    "https://sdp.nopkt.com",
 		License:     "MIT",
 		Overridables: nfpm.Overridables{
 			EmptyFolders: emptyDirList,

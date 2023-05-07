@@ -1,4 +1,4 @@
-// Copyright (c) Tailscale Inc & AUTHORS
+// Copyright (c) Mirage Inc & AUTHORS
 // SPDX-License-Identifier: BSD-3-Clause
 
 package unixpkgs

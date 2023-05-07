@@ -517,20 +517,20 @@ func ApplyDiskConfig() (err error) {
 func getPlatformEnvFile() string {
 	switch runtime.GOOS {
 	case "windows":
-		return filepath.Join(os.Getenv("ProgramData"), "Tailscale", "tailscaled-env.txt")
+		return filepath.Join(os.Getenv("ProgramData"), "Mirage", "miraged-env.txt")
 	case "linux":
 		if distro.Get() == distro.Synology {
-			return "/etc/tailscale/tailscaled-env.txt"
+			return "/etc/mirage/miraged-env.txt"
 		}
 	case "darwin":
 		if version.IsSandboxedMacOS() { // the two GUI variants (App Store or separate download)
 			// This will be user-visible as ~/Library/Containers/$VARIANT/Data/tailscaled-env.txt
 			// where $VARIANT is "io.tailscale.ipn.macsys" for macsys (downloadable mac GUI builds)
 			// or "io.tailscale.ipn.macos.network-extension" for App Store builds.
-			return filepath.Join(os.Getenv("HOME"), "tailscaled-env.txt")
+			return filepath.Join(os.Getenv("HOME"), "miraged-env.txt")
 		} else {
 			// Open source / homebrew variable, running tailscaled-on-macOS.
-			return "/etc/tailscale/tailscaled-env.txt"
+			return "/etc/mirage/miraged-env.txt"
 		}
 	}
 	return ""

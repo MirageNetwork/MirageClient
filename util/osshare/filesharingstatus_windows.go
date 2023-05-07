@@ -1,4 +1,4 @@
-// Copyright (c) Tailscale Inc & AUTHORS
+// Copyright (c) Mirage Inc & AUTHORS
 // SPDX-License-Identifier: BSD-3-Clause
 
 //go:build windows
@@ -16,12 +16,12 @@ import (
 )
 
 const (
-	sendFileShellKey = `*\shell\tailscale`
+	sendFileShellKey = `*\shell\mirage`
 )
 
 var ipnExePath struct {
 	sync.Mutex
-	cache string // absolute path of tailscale-ipn.exe, populated lazily on first use
+	cache string // absolute path of Mirage.exe, populated lazily on first use
 }
 
 func getIpnExePath(logf logger.Logf) string {
@@ -32,8 +32,8 @@ func getIpnExePath(logf logger.Logf) string {
 		return ipnExePath.cache
 	}
 
-	// Find the absolute path of tailscale-ipn.exe assuming that it's in the same
-	// directory as this executable (tailscaled.exe).
+	// Find the absolute path of Mirage.exe assuming that it's in the same
+	// directory as this executable (Mirage.exe).
 	p, err := os.Executable()
 	if err != nil {
 		logf("os.Executable error: %v", err)
@@ -43,7 +43,7 @@ func getIpnExePath(logf logger.Logf) string {
 		logf("filepath.EvalSymlinks error: %v", err)
 		return ""
 	}
-	p = filepath.Join(filepath.Dir(p), "tailscale-ipn.exe")
+	p = filepath.Join(filepath.Dir(p), "Mirage.exe")
 	if p, err = filepath.Abs(p); err != nil {
 		logf("filepath.Abs error: %v", err)
 		return ""
@@ -53,7 +53,7 @@ func getIpnExePath(logf logger.Logf) string {
 	return p
 }
 
-// SetFileSharingEnabled adds/removes "Send with Tailscale" from the Windows shell menu.
+// SetFileSharingEnabled adds/removes "Send with Mirage" from the Windows shell menu.
 func SetFileSharingEnabled(enabled bool, logf logger.Logf) {
 	logf = logger.WithPrefix(logf, fmt.Sprintf("SetFileSharingEnabled(%v) error: ", enabled))
 	if enabled {
@@ -75,7 +75,7 @@ func enableFileSharing(logf logger.Logf) {
 		return
 	}
 	defer k.Close()
-	if err := k.SetStringValue("", "Send with Tailscale..."); err != nil {
+	if err := k.SetStringValue("", "Send with Mirage..."); err != nil {
 		logf("k.SetStringValue error: %v", err)
 		return
 	}

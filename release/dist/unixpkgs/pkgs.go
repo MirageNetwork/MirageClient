@@ -1,7 +1,7 @@
-// Copyright (c) Tailscale Inc & AUTHORS
+// Copyright (c) Mirage Inc & AUTHORS
 // SPDX-License-Identifier: BSD-3-Clause
 
-// Package unixpkgs contains dist Targets for building unix Tailscale packages.
+// Package unixpkgs contains dist Targets for building unix Mirage packages.
 package unixpkgs
 
 import (
@@ -45,15 +45,15 @@ func (t *tgzTarget) Build(b *dist.Build) ([]string, error) {
 	if t.goenv["GOOS"] == "linux" {
 		// Linux used to be the only tgz architecture, so we didn't put the OS
 		// name in the filename.
-		filename = fmt.Sprintf("tailscale_%s_%s.tgz", b.Version.Short, t.arch())
+		filename = fmt.Sprintf("mirage_%s_%s.tgz", b.Version.Short, t.arch())
 	} else {
-		filename = fmt.Sprintf("tailscale_%s_%s_%s.tgz", b.Version.Short, t.os(), t.arch())
+		filename = fmt.Sprintf("mirage_%s_%s_%s.tgz", b.Version.Short, t.os(), t.arch())
 	}
-	ts, err := b.BuildGoBinary("tailscale.com/cmd/tailscale", t.goenv)
+	ts, err := b.BuildGoBinary("tailscale.com/cmd/mirage", t.goenv)
 	if err != nil {
 		return nil, err
 	}
-	tsd, err := b.BuildGoBinary("tailscale.com/cmd/tailscaled", t.goenv)
+	tsd, err := b.BuildGoBinary("tailscale.com/cmd/miraged", t.goenv)
 	if err != nil {
 		return nil, err
 	}
@@ -116,10 +116,10 @@ func (t *tgzTarget) Build(b *dist.Build) ([]string, error) {
 	if err := addDir(dir); err != nil {
 		return nil, err
 	}
-	if err := addFile(tsd, filepath.Join(dir, "tailscaled"), 0755); err != nil {
+	if err := addFile(tsd, filepath.Join(dir, "miraged"), 0755); err != nil {
 		return nil, err
 	}
-	if err := addFile(ts, filepath.Join(dir, "tailscale"), 0755); err != nil {
+	if err := addFile(ts, filepath.Join(dir, "mirage"), 0755); err != nil {
 		return nil, err
 	}
 	if t.os() == "linux" {
@@ -127,14 +127,14 @@ func (t *tgzTarget) Build(b *dist.Build) ([]string, error) {
 		if err := addDir(dir); err != nil {
 			return nil, err
 		}
-		tailscaledDir, err := b.GoPkg("tailscale.com/cmd/tailscaled")
+		mirageDir, err := b.GoPkg("tailscale.com/cmd/miraged")
 		if err != nil {
 			return nil, err
 		}
-		if err := addFile(filepath.Join(tailscaledDir, "tailscaled.service"), filepath.Join(dir, "tailscaled.service"), 0644); err != nil {
+		if err := addFile(filepath.Join(mirageDir, "miraged.service"), filepath.Join(dir, "miraged.service"), 0644); err != nil {
 			return nil, err
 		}
-		if err := addFile(filepath.Join(tailscaledDir, "tailscaled.defaults"), filepath.Join(dir, "tailscaled.defaults"), 0644); err != nil {
+		if err := addFile(filepath.Join(mirageDir, "miraged.defaults"), filepath.Join(dir, "miraged.defaults"), 0644); err != nil {
 			return nil, err
 		}
 	}
@@ -172,16 +172,16 @@ func (t *debTarget) Build(b *dist.Build) ([]string, error) {
 		return nil, errors.New("deb only supported on linux")
 	}
 
-	ts, err := b.BuildGoBinary("tailscale.com/cmd/tailscale", t.goenv)
+	ts, err := b.BuildGoBinary("tailscale.com/cmd/mirage", t.goenv)
 	if err != nil {
 		return nil, err
 	}
-	tsd, err := b.BuildGoBinary("tailscale.com/cmd/tailscaled", t.goenv)
+	tsd, err := b.BuildGoBinary("tailscale.com/cmd/miraged", t.goenv)
 	if err != nil {
 		return nil, err
 	}
 
-	tailscaledDir, err := b.GoPkg("tailscale.com/cmd/tailscaled")
+	mirageDir, err := b.GoPkg("tailscale.com/cmd/miraged")
 	if err != nil {
 		return nil, err
 	}
@@ -192,24 +192,24 @@ func (t *debTarget) Build(b *dist.Build) ([]string, error) {
 
 	arch := debArch(t.arch())
 	info := nfpm.WithDefaults(&nfpm.Info{
-		Name:        "tailscale",
+		Name:        "mirage",
 		Arch:        arch,
 		Platform:    "linux",
 		Version:     b.Version.Short,
-		Maintainer:  "Tailscale Inc <info@tailscale.com>",
-		Description: "The easiest, most secure, cross platform way to use WireGuard + oauth2 + 2FA/SSO",
-		Homepage:    "https://www.tailscale.com",
+		Maintainer:  "Mirage Inc <gps949@nopkt.com>",
+		Description: "The second easy, second secure, cross platform way to use WireGuard + oauth2 + 2FA/SSO",
+		Homepage:    "https://sdp.nopkt.com",
 		License:     "MIT",
 		Section:     "net",
 		Priority:    "extra",
 		Overridables: nfpm.Overridables{
 			Files: map[string]string{
-				ts:  "/usr/bin/tailscale",
-				tsd: "/usr/sbin/tailscaled",
-				filepath.Join(tailscaledDir, "tailscaled.service"): "/lib/systemd/system/tailscaled.service",
+				ts:  "/usr/bin/mirage",
+				tsd: "/usr/sbin/miraged",
+				filepath.Join(mirageDir, "miraged.service"): "/lib/systemd/system/miraged.service",
 			},
 			ConfigFiles: map[string]string{
-				filepath.Join(tailscaledDir, "tailscaled.defaults"): "/etc/default/tailscaled",
+				filepath.Join(mirageDir, "miraged.defaults"): "/etc/default/miraged",
 			},
 			Scripts: nfpm.Scripts{
 				PostInstall: filepath.Join(repoDir, "release/deb/debian.postinst.sh"),
@@ -217,9 +217,9 @@ func (t *debTarget) Build(b *dist.Build) ([]string, error) {
 				PostRemove:  filepath.Join(repoDir, "release/deb/debian.postrm.sh"),
 			},
 			Depends:    []string{"iptables", "iproute2"},
-			Recommends: []string{"tailscale-archive-keyring (>= 1.35.181)"},
-			Replaces:   []string{"tailscale-relay"},
-			Conflicts:  []string{"tailscale-relay"},
+			Recommends: []string{"mirage-archive-keyring (>= 1.35.181)"},
+			Replaces:   []string{"mirage-relay"},
+			Conflicts:  []string{"mirage-relay"},
 		},
 	})
 	pkg, err := nfpm.Get("deb")
@@ -227,7 +227,7 @@ func (t *debTarget) Build(b *dist.Build) ([]string, error) {
 		return nil, err
 	}
 
-	filename := fmt.Sprintf("tailscale_%s_%s.deb", b.Version.Short, arch)
+	filename := fmt.Sprintf("mirage_%s_%s.deb", b.Version.Short, arch)
 	log.Printf("Building %s", filename)
 	f, err := os.Create(filepath.Join(b.Out, filename))
 	if err != nil {
@@ -265,16 +265,16 @@ func (t *rpmTarget) Build(b *dist.Build) ([]string, error) {
 		return nil, errors.New("rpm only supported on linux")
 	}
 
-	ts, err := b.BuildGoBinary("tailscale.com/cmd/tailscale", t.goenv)
+	ts, err := b.BuildGoBinary("tailscale.com/cmd/mirage", t.goenv)
 	if err != nil {
 		return nil, err
 	}
-	tsd, err := b.BuildGoBinary("tailscale.com/cmd/tailscaled", t.goenv)
+	tsd, err := b.BuildGoBinary("tailscale.com/cmd/miraged", t.goenv)
 	if err != nil {
 		return nil, err
 	}
 
-	tailscaledDir, err := b.GoPkg("tailscale.com/cmd/tailscaled")
+	mirageDir, err := b.GoPkg("tailscale.com/cmd/miraged")
 	if err != nil {
 		return nil, err
 	}
@@ -285,34 +285,34 @@ func (t *rpmTarget) Build(b *dist.Build) ([]string, error) {
 
 	arch := rpmArch(t.arch())
 	info := nfpm.WithDefaults(&nfpm.Info{
-		Name:        "tailscale",
+		Name:        "mirage",
 		Arch:        arch,
 		Platform:    "linux",
 		Version:     b.Version.Short,
-		Maintainer:  "Tailscale Inc <info@tailscale.com>",
-		Description: "The easiest, most secure, cross platform way to use WireGuard + oauth2 + 2FA/SSO",
-		Homepage:    "https://www.tailscale.com",
+		Maintainer:  "Mirage Inc <gps949@nopkt.com>",
+		Description: "The second easy, second secure, cross platform way to use WireGuard + oauth2 + 2FA/SSO",
+		Homepage:    "https://www.nopkt.com",
 		License:     "MIT",
 		Overridables: nfpm.Overridables{
 			Files: map[string]string{
-				ts:  "/usr/bin/tailscale",
-				tsd: "/usr/sbin/tailscaled",
-				filepath.Join(tailscaledDir, "tailscaled.service"): "/lib/systemd/system/tailscaled.service",
+				ts:  "/usr/bin/mirage",
+				tsd: "/usr/sbin/miraged",
+				filepath.Join(mirageDir, "miraged.service"): "/lib/systemd/system/miraged.service",
 			},
 			ConfigFiles: map[string]string{
-				filepath.Join(tailscaledDir, "tailscaled.defaults"): "/etc/default/tailscaled",
+				filepath.Join(mirageDir, "miraged.defaults"): "/etc/default/miraged",
 			},
 			// SELinux policy on e.g. CentOS 8 forbids writing to /var/cache.
 			// Creating an empty directory at install time resolves this issue.
-			EmptyFolders: []string{"/var/cache/tailscale"},
+			EmptyFolders: []string{"/var/cache/mirage"},
 			Scripts: nfpm.Scripts{
 				PostInstall: filepath.Join(repoDir, "release/rpm/rpm.postinst.sh"),
 				PreRemove:   filepath.Join(repoDir, "release/rpm/rpm.prerm.sh"),
 				PostRemove:  filepath.Join(repoDir, "release/rpm/rpm.postrm.sh"),
 			},
 			Depends:   []string{"iptables", "iproute"},
-			Replaces:  []string{"tailscale-relay"},
-			Conflicts: []string{"tailscale-relay"},
+			Replaces:  []string{"mirage-relay"},
+			Conflicts: []string{"mirage-relay"},
 			RPM: nfpm.RPM{
 				Group: "Network",
 			},
@@ -323,7 +323,7 @@ func (t *rpmTarget) Build(b *dist.Build) ([]string, error) {
 		return nil, err
 	}
 
-	filename := fmt.Sprintf("tailscale_%s_%s.rpm", b.Version.Short, arch)
+	filename := fmt.Sprintf("mirage_%s_%s.rpm", b.Version.Short, arch)
 	log.Printf("Building %s", filename)
 
 	f, err := os.Create(filepath.Join(b.Out, filename))

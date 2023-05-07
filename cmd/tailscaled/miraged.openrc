@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+
+set -a
+source /etc/default/miraged
+set +a
+
+command="/usr/sbin/miraged"
+command_args="--state=/var/lib/mirage/miraged.state --port=$PORT --socket=/var/run/mirage/miraged.sock $FLAGS"
+command_background=true
+pidfile="/run/miraged.pid"
+start_stop_daemon_args="-1 /var/log/miraged.log -2 /var/log/miraged.log"
+
+depend() {
+    need net
+}
+
+start_pre() {
+    mkdir -p /var/run/mirage
+    mkdir -p /var/lib/mirage
+    $command --cleanup
+}
+
+stop_post() {
+    $command --cleanup
+}

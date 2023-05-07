@@ -192,17 +192,17 @@ func findCmdTailscale() (string, error) {
 	}
 	switch runtime.GOOS {
 	case "linux":
-		if self == "/usr/sbin/tailscaled" {
-			return "/usr/bin/tailscale", nil
+		if self == "/usr/sbin/miraged" {
+			return "/usr/bin/mirage", nil
 		}
-		return "", errors.New("tailscale not found in expected place")
+		return "", errors.New("mirage not found in expected place")
 	case "windows":
 		dir := filepath.Dir(self)
-		ts := filepath.Join(dir, "tailscale.exe")
+		ts := filepath.Join(dir, "mirage.exe")
 		if fi, err := os.Stat(ts); err == nil && fi.Mode().IsRegular() {
 			return ts, nil
 		}
-		return "", errors.New("tailscale.exe not found in expected place")
+		return "", errors.New("mirage.exe not found in expected place")
 	}
 	return "", fmt.Errorf("unsupported OS %v", runtime.GOOS)
 }

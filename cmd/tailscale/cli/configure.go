@@ -15,10 +15,10 @@ import (
 
 var configureCmd = &ffcli.Command{
 	Name:      "configure",
-	ShortHelp: "[ALPHA] Configure the host to enable more Tailscale features",
+	ShortHelp: "[ALPHA] Configure the host to enable more Mirage features",
 	LongHelp: strings.TrimSpace(`
 The 'configure' set of commands are intended to provide a way to enable different
-services on the host to use Tailscale in more ways.
+services on the host to use Mirage in more ways.
 `),
 	FlagSet: (func() *flag.FlagSet {
 		fs := newFlagSet("configure")
