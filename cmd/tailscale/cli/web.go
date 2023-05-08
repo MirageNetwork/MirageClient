@@ -341,7 +341,7 @@ req.open("GET", serverURL + "/webman/login.cgi", true);
 req.onload = function() {
 	var jsonResponse = JSON.parse(req.responseText);
 	var token = jsonResponse["SynoToken"];
-	document.location.href = serverURL + "/webman/3rdparty/Tailscale/?SynoToken=" + token;
+	document.location.href = serverURL + "/webman/3rdparty/Mirage/?SynoToken=" + token;
 };
 req.send(null);
 </script>

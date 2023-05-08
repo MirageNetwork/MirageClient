@@ -6,33 +6,38 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<link rel="shortcut icon"
 		href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAQAAADZc7J/AAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAAAmJLR0QA/4ePzL8AAAAHdElNRQflAx4QGA4EvmzDAAAA30lEQVRIx2NgGAWMCKa8JKM4A8Ovt88ekyLCDGOoyDBJMjExMbFy8zF8/EKsCAMDE8yAPyIwFps48SJIBpAL4AZwvoSx/r0lXgQpDN58EWL5x/7/H+vL20+JFxluQKVe5b3Ke5V+0kQQCamfoYKBg4GDwUKI8d0BYkWQkrLKewYBKPPDHUFiRaiZkBgmwhj/F5IgggyUJ6i8V3mv0kCayDAAeEsklXqGAgYGhgV3CnGrwVciYSYk0kokhgS44/JxqqFpiYSZbEgskd4dEBRk1GD4wdB5twKXmlHAwMDAAACdEZau06NQUwAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyMC0wNy0xNVQxNTo1Mzo0MCswMDowMCVXsDIAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjAtMDctMTVUMTU6NTM6NDArMDA6MDBUCgiOAAAAAElFTkSuQmCC" />
-	<title>Tailscale</title>
+	<title>蜃境</title>
 	<style>{{template "web.css"}}</style>
 </head>
 
 <body class="py-14">
 <main class="container max-w-lg mx-auto mb-8 py-6 px-8 bg-white rounded-md shadow-2xl" style="width: 95%">
 	<header class="flex justify-between items-center min-width-0 py-2 mb-8">
-		<svg width="26" height="26" viewBox="0 0 23 23" title="Tailscale" fill="none" xmlns="http://www.w3.org/2000/svg"
-			class="flex-shrink-0 mr-4">
-			<circle opacity="0.2" cx="3.4" cy="3.25" r="2.7" fill="currentColor"></circle>
-			<circle cx="3.4" cy="11.3" r="2.7" fill="currentColor"></circle>
-			<circle opacity="0.2" cx="3.4" cy="19.5" r="2.7" fill="currentColor"></circle>
-			<circle cx="11.5" cy="11.3" r="2.7" fill="currentColor"></circle>
-			<circle cx="11.5" cy="19.5" r="2.7" fill="currentColor"></circle>
-			<circle opacity="0.2" cx="11.5" cy="3.25" r="2.7" fill="currentColor"></circle>
-			<circle opacity="0.2" cx="19.5" cy="3.25" r="2.7" fill="currentColor"></circle>
-			<circle cx="19.5" cy="11.3" r="2.7" fill="currentColor"></circle>
-			<circle opacity="0.2" cx="19.5" cy="19.5" r="2.7" fill="currentColor"></circle>
-		</svg>
+		<svg width="26" height="26" viewBox="-50 -50 100 100" style="background-color: transparent;" xmlns="http://www.w3.org/2000/svg">
+			<rect x="-48" y="-48" width="96" height="96" rx="15" fill="none"/>
+			<line x1="0" y1="0" x2="0" y2="-25" stroke-width="6.5" transform="rotate(0 0 0)" stroke="rgb(68,92,112)"/>
+			<circle cx="0" cy="-35" r="9" fill="rgb(2,31,54)" transform="rotate(0 0 0)" stroke-width="5.5" stroke="rgb(68,92,112)"/>
+			<line x1="0" y1="0" x2="0" y2="-25" stroke-width="6.5" transform="rotate(60 0 0)" stroke="rgb(68,92,112)"/>
+			<circle cx="0" cy="-35" r="9" fill="white" transform="rotate(60 0 0)" stroke-width="5.5" stroke="rgb(68,92,112)"/>
+			<line x1="0" y1="0" x2="0" y2="-25" stroke-width="6.5" transform="rotate(120 0 0)" stroke="rgb(68,92,112)"/>
+			<circle cx="0" cy="-35" r="9" fill="rgb(2,31,54)" transform="rotate(120 0 0)" stroke-width="5.5" stroke="rgb(68,92,112)"/>
+			<line x1="0" y1="0" x2="0" y2="-25" stroke-width="6.5" transform="rotate(180 0 0)" stroke="rgb(68,92,112)"/>
+			<circle cx="0" cy="-35" r="9" fill="white" transform="rotate(180 0 0)" stroke-width="5.5" stroke="rgb(68,92,112)"/>
+			<line x1="0" y1="0" x2="0" y2="-25" stroke-width="6.5" transform="rotate(240 0 0)" stroke="rgb(68,92,112)"/>
+			<circle cx="0" cy="-35" r="9" fill="rgb(2,31,54)" transform="rotate(240 0 0)" stroke-width="5.5" stroke="rgb(68,92,112)"/>
+			<line x1="0" y1="0" x2="0" y2="-25" stroke-width="6.5" transform="rotate(300 0 0)" stroke="rgb(68,92,112)"/>
+			<circle cx="0" cy="-35" r="9" fill="white" transform="rotate(300 0 0)" stroke-width="5.5" stroke="rgb(68,92,112)"/>
+		  
+			<circle cx="0" cy="0" r="11" fill="white" stransform="rotate(0 0 0)" stroke-width="6.5" stroke="rgb(68,92,112)"/>
+		  </svg>
 		<div class="flex items-center justify-end space-x-2 w-2/3">
 			{{ with .Profile }}
 			<div class="text-right w-full leading-4">
 				<h4 class="truncate leading-normal">{{.LoginName}}</h4>
 				<div class="text-xs text-gray-500 text-right">
-					<a href="#" class="hover:text-gray-700 js-loginButton">Switch account</a> | <a href="#"
-						class="hover:text-gray-700 js-loginButton">Reauthenticate</a> | <a href="#"
-						class="hover:text-gray-700 js-logoutButton">Logout</a>
+					<a href="#" class="hover:text-gray-700 js-loginButton">切换账户</a> | <a href="#"
+						class="hover:text-gray-700 js-loginButton">重新登录</a> | <a href="#"
+						class="hover:text-gray-700 js-logoutButton">登出</a>
 				</div>
 			</div>
 			{{ end }}
@@ -65,11 +70,11 @@
 		<h5>{{.IP}}</h5>
 	</div>
 	<p class="mt-1 ml-1 mb-6 text-xs text-gray-600">
-		Debug info: Tailscale {{ .IPNVersion }}, tun={{.TUNMode}}{{ if .IsSynology }}, DSM{{ .DSMVersion}}
+		调试信息: 蜃境 {{ .IPNVersion }}, tun={{.TUNMode}}{{ if .IsSynology }}, DSM{{ .DSMVersion}}
 			{{if not .TUNMode}}
 			(<a href="https://tailscale.com/kb/1152/synology-outbound/" class="link-underline text-gray-600" target="_blank"
 				aria-label="Configure outbound synology traffic"
-				rel="noopener noreferrer">outgoing access not configured</a>)
+				rel="noopener noreferrer">出访问未开启</a>)
 			{{end}}
 		{{end}}
 	</p>
@@ -77,43 +82,41 @@
 	{{ if or (eq .Status "NeedsLogin") (eq .Status "NoState") }}
 	{{ if .IP }}
 	<div class="mb-6">
-		<p class="text-gray-700">Your device's key has expired. Reauthenticate this device by logging in again, or <a
-				href="https://tailscale.com/kb/1028/key-expiry" class="link" target="_blank">learn more</a>.</p>
+		<p class="text-gray-700">你的设备密钥已过期。再次登录以重新认证该设备。</p>
 	</div>
 	<a href="#" class="mb-4 js-loginButton" target="_blank">
-		<button class="button button-blue w-full">Reauthenticate</button>
+		<button class="button button-blue w-full">再次登录</button>
 	</a>
 	{{ else }}
 	<div class="mb-6">
-		<h3 class="text-3xl font-semibold mb-3">Log in</h3>
-		<p class="text-gray-700">Get started by logging in to your Tailscale network. Or,&nbsp;learn&nbsp;more at <a
-				href="https://tailscale.com/" class="link" target="_blank">tailscale.com</a>.</p>
+		<h3 class="text-3xl font-semibold mb-3">登录</h3>
+		<p class="text-gray-700">登录进你的蜃境网络以开始</p>
 	</div>
 	<a href="#" class="mb-4 js-loginButton" target="_blank">
-		<button class="button button-blue w-full">Log In</button>
+		<button class="button button-blue w-full">登录</button>
 	</a>
 	{{ end }}
 	{{ else if eq .Status "NeedsMachineAuth" }}
 	<div class="mb-4">
-		This device is authorized, but needs approval from a network admin before it can connect to the network.
+		设备已认证，但在连接到网络前需要网络管理员的批准。
 	</div>
 	{{ else }}
 	<div class="mb-4">
-		<p>You are connected! Access this device over Tailscale using the device name or IP address above.</p>
+		<p>你已连接！在蜃境中通过上面的设备名或IP地址访问该设备。</p>
 	</div>
 	<div class="mb-4">
 	<a href="#" class="mb-4 js-advertiseExitNode">
 		{{if .AdvertiseExitNode}}
-		<button class="button button-red button-medium" id="enabled">Stop advertising Exit Node</button>
+		<button class="button button-red button-medium" id="enabled">停止用作出口节点</button>
 		{{else}}
-		<button class="button button-blue button-medium" id="enabled">Advertise as Exit Node</button>
+		<button class="button button-blue button-medium" id="enabled">用作出口节点</button>
 		{{end}}
 	</a>
 	</div>
 	{{ end }}
 </main>
 <footer class="container max-w-lg mx-auto text-center">
-	<a class="text-xs text-gray-500 hover:text-gray-600" href="{{ .LicensesURL }}">Open Source Licenses</a>
+	<p class="text-xs text-gray-500 hover:text-gray-600">欢迎使用蜃境</p>
 </footer>
 <script>(function () {
 const advertiseExitNode = {{.AdvertiseExitNode}};
