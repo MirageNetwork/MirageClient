@@ -1,0 +1,11 @@
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: restrict-cluster-ip
+  namespace: microseg
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          allowed-namespace: "true"
