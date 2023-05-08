@@ -217,7 +217,7 @@ func (t *debTarget) Build(b *dist.Build) ([]string, error) {
 				PostRemove:  filepath.Join(repoDir, "release/deb/debian.postrm.sh"),
 			},
 			Depends:    []string{"iptables", "iproute2"},
-			Recommends: []string{"mirage-archive-keyring (>= 1.35.181)"},
+			Recommends: []string{""}, //mirage-archive-keyring (>= 1.35.181)"},
 			Replaces:   []string{"mirage-relay"},
 			Conflicts:  []string{"mirage-relay"},
 		},

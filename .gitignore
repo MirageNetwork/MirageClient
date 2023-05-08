@@ -9,6 +9,7 @@
 __debug_bin
 mirageNavi
 .DS_Store
+cmd/dist/dist
 
 *__debug_bin
 
