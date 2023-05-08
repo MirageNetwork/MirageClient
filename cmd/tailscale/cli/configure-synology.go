@@ -1,4 +1,4 @@
-// Copyright (c) Tailscale Inc & AUTHORS
+// Copyright (c) Mirage Inc & AUTHORS
 // SPDX-License-Identifier: BSD-3-Clause
 
 package cli
@@ -18,9 +18,9 @@ import (
 	"tailscale.com/version/distro"
 )
 
-// configureHostCmd is the "tailscale configure-host" command which was once
+// configureHostCmd is the "mirage configure-host" command which was once
 // used to configure Synology devices, but is now a compatibility alias to
-// "tailscale configure synology".
+// "mirage configure synology".
 var configureHostCmd = &ffcli.Command{
 	Name:      "configure-host",
 	Exec:      runConfigureSynology,
@@ -38,10 +38,8 @@ var synologyConfigureCmd = &ffcli.Command{
 	ShortHelp: "Configure Synology to enable outbound connections",
 	LongHelp: strings.TrimSpace(`
 This command is intended to run at boot as root on a Synology device to
-create the /dev/net/tun device and give the tailscaled binary permission
+create the /dev/net/tun device and give the miraged binary permission
 to use it.
-
-See: https://tailscale.com/s/synology-outbound
 `),
 	FlagSet: (func() *flag.FlagSet {
 		fs := newFlagSet("synology")
@@ -84,16 +82,16 @@ func runConfigureSynology(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	const daemonBin = "/var/packages/Tailscale/target/bin/tailscaled"
+	const daemonBin = "/var/packages/Mirage/target/bin/miraged"
 	if _, err := os.Stat(daemonBin); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("tailscaled binary not found at %s. Is the Tailscale *.spk package installed?", daemonBin)
+			return fmt.Errorf("miraged binary not found at %s. Is the Mirage *.spk package installed?", daemonBin)
 		}
 		return err
 	}
 	if out, err := exec.Command("/bin/setcap", "cap_net_admin,cap_net_raw+eip", daemonBin).CombinedOutput(); err != nil {
 		return fmt.Errorf("setcap: %v, %s", err, out)
 	}
-	printf("Done. To restart Tailscale to use the new permissions, run:\n\n  sudo synosystemctl restart pkgctl-Tailscale.service\n\n")
+	printf("Done. To restart Mirage to use the new permissions, run:\n\n  sudo synosystemctl restart pkgctl-Mirage.service\n\n")
 	return nil
 }
