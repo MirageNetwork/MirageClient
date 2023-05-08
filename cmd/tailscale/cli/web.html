@@ -113,11 +113,13 @@
 		{{end}}
 	</a>
 	</div>
-	<label class="text-gray-500 mb-4 mr-2 text-sm">子网转发</label>
-	<input id="subnetSet" class="mb-4 px-2 text-sm border rounded-md" value="{{.AdvertiseRoutes}}"/>
-	<a href="#" class="mb-4 js-advertiseRoutes">
-		<button class="button button-blue button-medium">更新子网转发设置</button>
-	</a>
+	<div class="flex justify-between items-center">
+		<label class="text-gray-500 mr-2 text-md">子网转发</label>	
+		<input id="subnetSet" class="px-2 mr-2 text-md border rounded-md" value="{{.AdvertiseRoutes}}">
+		<a href="#" class="js-advertiseRoutes">
+			<button class="button button-blue text-xs">更新子网转发设置</button>
+		</a>
+	</div>
 	{{ end }}
 </main>
 <footer class="container max-w-lg mx-auto text-center">
