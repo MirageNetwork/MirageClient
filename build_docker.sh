@@ -53,8 +53,9 @@ case "$TARGET" in
       /usr/local/bin/containerboot
     ;;
   operator)
-    DEFAULT_REPOS="tailscale/k8s-operator"
+    DEFAULT_REPOS="awsong/k8s-operator"
     REPOS="${REPOS:-${DEFAULT_REPOS}}"
+#    /root/mkctr/mkctr \
     go run github.com/tailscale/mkctr \
       --gopaths="tailscale.com/cmd/k8s-operator:/usr/local/bin/operator" \
       --ldflags="\

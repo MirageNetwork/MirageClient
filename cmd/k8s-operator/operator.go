@@ -50,16 +50,19 @@ import (
 	"tailscale.com/util/dnsname"
 )
 
+var agentKey string
+
 func main() {
 	// Required to use our client API. We're fine with the instability since the
 	// client lives in the same repo as this code.
 	tailscale.I_Acknowledge_This_API_Is_Unstable = true
 
 	var (
-		hostname           = defaultEnv("OPERATOR_HOSTNAME", "tailscale-operator")
-		kubeSecret         = defaultEnv("OPERATOR_SECRET", "")
-		operatorTags       = defaultEnv("OPERATOR_INITIAL_TAGS", "tag:k8s-operator")
+		hostname   = defaultEnv("OPERATOR_HOSTNAME", "tailscale-operator")
+		kubeSecret = defaultEnv("OPERATOR_SECRET", "")
+		//		operatorTags       = defaultEnv("OPERATOR_INITIAL_TAGS", "tag:k8s-operator")
 		tsNamespace        = defaultEnv("OPERATOR_NAMESPACE", "")
+		controlURL         = defaultEnv("CONTROL_URL", "https://login.tailscale.com")
 		tslogging          = defaultEnv("OPERATOR_LOGGING", "info")
 		clientIDPath       = defaultEnv("CLIENT_ID_FILE", "")
 		clientSecretPath   = defaultEnv("CLIENT_SECRET_FILE", "")
@@ -92,6 +95,7 @@ func main() {
 	if err != nil {
 		startlog.Fatalf("reading client secret %q: %v", clientSecretPath, err)
 	}
+	agentKey = string(clientID)
 	credentials := clientcredentials.Config{
 		ClientID:     string(clientID),
 		ClientSecret: string(clientSecret),
@@ -143,19 +147,29 @@ waitOnline:
 			if loginDone {
 				break
 			}
-			caps := tailscale.KeyCapabilities{
-				Devices: tailscale.KeyDeviceCapabilities{
-					Create: tailscale.KeyDeviceCreateCapabilities{
-						Reusable:      false,
-						Preauthorized: true,
-						Tags:          strings.Split(operatorTags, ","),
+			/*
+				caps := tailscale.KeyCapabilities{
+					Devices: tailscale.KeyDeviceCapabilities{
+						Create: tailscale.KeyDeviceCreateCapabilities{
+							Reusable:      false,
+							Preauthorized: true,
+							Tags:          strings.Split(operatorTags, ","),
+						},
 					},
-				},
+				}
+				authkey, _, err := tsClient.CreateKey(ctx, caps)
+				if err != nil {
+					startlog.Fatalf("creating operator authkey: %v", err)
+				}
+			*/
+			authkey := string(clientSecret)
+			currentPrefs, _ := lc.GetPrefs(ctx)
+			mp := &ipn.MaskedPrefs{
+				Prefs: *currentPrefs,
 			}
-			authkey, _, err := tsClient.CreateKey(ctx, caps)
-			if err != nil {
-				startlog.Fatalf("creating operator authkey: %v", err)
-			}
+			mp.Prefs.ControlURL = controlURL
+			mp.ControlURLSet = true
+			lc.EditPrefs(ctx, mp)
 			if err := lc.Start(ctx, ipn.Options{
 				AuthKey: authkey,
 			}); err != nil {
@@ -487,7 +501,7 @@ func (a *ServiceReconciler) hasLoadBalancerClass(svc *corev1.Service) bool {
 	return svc != nil &&
 		svc.Spec.Type == corev1.ServiceTypeLoadBalancer &&
 		svc.Spec.LoadBalancerClass != nil &&
-		*svc.Spec.LoadBalancerClass == "tailscale"
+		*svc.Spec.LoadBalancerClass == "miranet"
 }
 
 func (a *ServiceReconciler) hasAnnotation(svc *corev1.Service) bool {
@@ -580,20 +594,23 @@ func (a *ServiceReconciler) getDeviceInfo(ctx context.Context, svc *corev1.Servi
 }
 
 func (a *ServiceReconciler) newAuthKey(ctx context.Context, tags []string) (string, error) {
-	caps := tailscale.KeyCapabilities{
-		Devices: tailscale.KeyDeviceCapabilities{
-			Create: tailscale.KeyDeviceCreateCapabilities{
-				Reusable:      false,
-				Preauthorized: true,
-				Tags:          tags,
+	/*
+		caps := tailscale.KeyCapabilities{
+			Devices: tailscale.KeyDeviceCapabilities{
+				Create: tailscale.KeyDeviceCreateCapabilities{
+					Reusable:      false,
+					Preauthorized: true,
+					Tags:          tags,
+				},
 			},
-		},
-	}
-	key, _, err := a.tsClient.CreateKey(ctx, caps)
-	if err != nil {
-		return "", err
-	}
-	return key, nil
+		}
+		key, _, err := a.tsClient.CreateKey(ctx, caps)
+		fmt.Println(key)
+		if err != nil {
+			return "", err
+		}
+	*/
+	return agentKey, nil
 }
 
 //go:embed manifests/proxy.yaml
