@@ -72,9 +72,7 @@
 	<p class="mt-1 ml-1 mb-6 text-xs text-gray-600">
 		调试信息: 蜃境 {{ .IPNVersion }}, tun={{.TUNMode}}{{ if .IsSynology }}, DSM{{ .DSMVersion}}
 			{{if not .TUNMode}}
-			(<p class="link-underline text-gray-600" target="_blank"
-				aria-label="Configure outbound synology traffic"
-				rel="noopener noreferrer">出访问未开启</p>)
+			(出访问未开启: 请脚本或ssh执行 /var/packages/Mirage/target/bin/mirage configure-host; synosystemctl restart pkgctl-Mirage.service)
 			{{end}}
 		{{end}}
 	</p>
@@ -92,8 +90,8 @@
 		<h3 class="text-3xl font-semibold mb-3">登录</h3>
 		<p class="text-gray-700">登录进你的蜃境网络以开始</p>
 	</div>
-	<label class="text-gray-700">控制器地址</label>
-	<input id="serverCode" placeholder="留空使用默认值"/>
+	<label class="text-gray-500 mb-4 mr-2 text-sm">控制器地址</label>
+	<input id="serverCode" class="mb-4 px-2 text-sm border rounded-md" placeholder="留空使用默认值"/>
 	<a href="#" class="mb-4 js-loginKickButton" target="_blank">
 		<button class="button button-blue w-full">登录</button>
 	</a>
@@ -115,6 +113,11 @@
 		{{end}}
 	</a>
 	</div>
+	<label class="text-gray-500 mb-4 mr-2 text-sm">子网转发</label>
+	<input id="subnetSet" class="mb-4 px-2 text-sm border rounded-md" value="{{.AdvertiseRoutes}}"/>
+	<a href="#" class="mb-4 js-advertiseRoutes">
+		<button class="button button-blue button-medium">更新子网转发设置</button>
+	</a>
 	{{ end }}
 </main>
 <footer class="container max-w-lg mx-auto text-center">
@@ -196,6 +199,12 @@ document.querySelectorAll(".js-logoutButton").forEach(function(el) {
 document.querySelectorAll(".js-advertiseExitNode").forEach(function (el) {
 	el.addEventListener("click", function(e) {
 		data.AdvertiseExitNode = !advertiseExitNode;
+		postData(e);
+	});
+})
+document.querySelectorAll(".js-advertiseRoutes").forEach(function (el) {
+	el.addEventListener("click", function(e) {
+		data.AdvertiseRoutes = document.getElementById("subnetSet").value;
 		postData(e);
 	});
 })
