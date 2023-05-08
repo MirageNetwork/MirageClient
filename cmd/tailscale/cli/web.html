@@ -72,9 +72,9 @@
 	<p class="mt-1 ml-1 mb-6 text-xs text-gray-600">
 		调试信息: 蜃境 {{ .IPNVersion }}, tun={{.TUNMode}}{{ if .IsSynology }}, DSM{{ .DSMVersion}}
 			{{if not .TUNMode}}
-			(<a href="https://tailscale.com/kb/1152/synology-outbound/" class="link-underline text-gray-600" target="_blank"
+			(<p class="link-underline text-gray-600" target="_blank"
 				aria-label="Configure outbound synology traffic"
-				rel="noopener noreferrer">出访问未开启</a>)
+				rel="noopener noreferrer">出访问未开启</p>)
 			{{end}}
 		{{end}}
 	</p>
@@ -92,7 +92,9 @@
 		<h3 class="text-3xl font-semibold mb-3">登录</h3>
 		<p class="text-gray-700">登录进你的蜃境网络以开始</p>
 	</div>
-	<a href="#" class="mb-4 js-loginButton" target="_blank">
+	<label class="text-gray-700">控制器地址</label>
+	<input id="serverCode" placeholder="留空使用默认值"/>
+	<a href="#" class="mb-4 js-loginKickButton" target="_blank">
 		<button class="button button-blue w-full">登录</button>
 	</a>
 	{{ end }}
@@ -120,9 +122,11 @@
 </footer>
 <script>(function () {
 const advertiseExitNode = {{.AdvertiseExitNode}};
+const advertiseRoutes = {{.AdvertiseRoutes}};
 let fetchingUrl = false;
 var data = {
-	AdvertiseRoutes: "{{.AdvertiseRoutes}}",
+	ServerCode:        "",
+	AdvertiseRoutes: advertiseRoutes,
 	AdvertiseExitNode: advertiseExitNode,
 	Reauthenticate: false,
 	ForceLogout: false
@@ -169,9 +173,16 @@ function postData(e) {
 		alert("Failed operation: " + err.message);
 	});
 }
-
 document.querySelectorAll(".js-loginButton").forEach(function (el){
 	el.addEventListener("click", function(e) {
+		data.ServerCode = "NOUPDATE";
+		data.Reauthenticate = true;
+		postData(e);
+	});
+})
+document.querySelectorAll(".js-loginKickButton").forEach(function (el){
+	el.addEventListener("click", function(e) {
+		data.ServerCode = document.getElementById("serverCode").value;
 		data.Reauthenticate = true;
 		postData(e);
 	});

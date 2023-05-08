@@ -65,6 +65,7 @@ type tmplData struct {
 }
 
 type postedData struct {
+	ServerCode        string
 	AdvertiseRoutes   string
 	AdvertiseExitNode bool
 	Reauthenticate    bool
@@ -391,10 +392,19 @@ func webHandler(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(mi{"error": err.Error()})
 			return
 		}
+
+		if postData.ServerCode != "" && postData.ServerCode != "NOUPDATE" && !strings.Contains(postData.ServerCode, "https://") && !strings.Contains(postData.ServerCode, "http://") {
+			postData.ServerCode = "https://" + postData.ServerCode
+		} else if postData.ServerCode == "" {
+			postData.ServerCode = ipn.DefaultControlURL
+		}
+
 		mp := &ipn.MaskedPrefs{
+			ControlURLSet:      postData.ServerCode != "NOUPDATE" && prefs.ControlURL != postData.ServerCode,
 			AdvertiseRoutesSet: true,
 			WantRunningSet:     true,
 		}
+		mp.Prefs.ControlURL = postData.ServerCode
 		mp.Prefs.WantRunning = true
 		mp.Prefs.AdvertiseRoutes = routes
 		log.Printf("Doing edit: %v", mp.Pretty())
