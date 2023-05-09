@@ -36,7 +36,7 @@ var DevMode bool
 func DefaultCertDir(leafDir string) string {
 	cacheDir, err := os.UserCacheDir()
 	if err == nil {
-		return filepath.Join(cacheDir, "tailscale", leafDir)
+		return filepath.Join(cacheDir, "mirage", leafDir)
 	}
 	return ""
 }
@@ -62,7 +62,8 @@ func AllowDebugAccess(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	if tsaddr.IsTailscaleIP(ip) || ip.IsLoopback() || ipStr == envknob.String("TS_ALLOW_DEBUG_IP") {
+
+	if true || tsaddr.IsTailscaleIP(ip) || ip.IsLoopback() || ipStr == envknob.String("TS_ALLOW_DEBUG_IP") { //cgao6: temp open
 		return true
 	}
 	if r.Method == "GET" {

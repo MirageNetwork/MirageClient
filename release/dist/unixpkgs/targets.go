@@ -1,4 +1,4 @@
-// Copyright (c) Tailscale Inc & AUTHORS
+// Copyright (c) Mirage Inc & AUTHORS
 // SPDX-License-Identifier: BSD-3-Clause
 
 package unixpkgs
@@ -64,15 +64,15 @@ func Targets() []dist.Target {
 
 var (
 	tarballs = map[string]bool{
-		"linux/386":      true,
-		"linux/amd64":    true,
-		"linux/arm":      true,
-		"linux/arm64":    true,
-		"linux/mips64":   true,
-		"linux/mips64le": true,
-		"linux/mips":     true,
-		"linux/mipsle":   true,
-		"linux/riscv64":  true,
+		"linux/386":   true,
+		"linux/amd64": true,
+		"linux/arm":   true,
+		"linux/arm64": true,
+		//cgao6		"linux/mips64":   true,
+		//cgao6		"linux/mips64le": true,
+		//cgao6		"linux/mips":     true,
+		//cgao6		"linux/mipsle":   true,
+		//cgao6		"linux/riscv64":  true,
 		// TODO: more tarballs we could distribute, but don't currently. Leaving
 		// out for initial parity with redo.
 		// "darwin/amd64":  true,
@@ -82,11 +82,11 @@ var (
 	}
 
 	debs = map[string]bool{
-		"linux/386":     true,
-		"linux/amd64":   true,
-		"linux/arm":     true,
-		"linux/arm64":   true,
-		"linux/riscv64": true,
+		"linux/386":   true,
+		"linux/amd64": true,
+		"linux/arm":   true,
+		"linux/arm64": true,
+		//cgao6		"linux/riscv64": true,
 		// TODO: maybe mipses, we accidentally started building them at some
 		// point even though they probably don't work right.
 		// "linux/mips":     true,
@@ -96,11 +96,11 @@ var (
 	}
 
 	rpms = map[string]bool{
-		"linux/386":     true,
-		"linux/amd64":   true,
-		"linux/arm":     true,
-		"linux/arm64":   true,
-		"linux/riscv64": true,
+		"linux/386":   true,
+		"linux/amd64": true,
+		"linux/arm":   true,
+		"linux/arm64": true,
+		//cgao6		"linux/riscv64": true,
 		// TODO: maybe mipses, we accidentally started building them at some
 		// point even though they probably don't work right.
 		// "linux/mips":     true,

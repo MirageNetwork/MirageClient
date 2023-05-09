@@ -70,11 +70,11 @@ func packageTypeWindows() string {
 		return ""
 	}
 	home, _ := os.UserHomeDir()
-	if strings.HasPrefix(exe, filepath.Join(home, "scoop", "apps", "tailscale")) {
+	if strings.HasPrefix(exe, filepath.Join(home, "scoop", "apps", "mirage")) {
 		return "scoop"
 	}
 	dir := filepath.Dir(exe)
-	nsisUninstaller := filepath.Join(dir, "Uninstall-Tailscale.exe")
+	nsisUninstaller := filepath.Join(dir, "Uninstall-Mirage.exe")
 	_, err = os.Stat(nsisUninstaller)
 	if err == nil {
 		return "nsis"

@@ -32,7 +32,7 @@ var (
 
    1. make the binaries as normal
    2. template in their paths as raw strings to the nixos system module
-   3. run `nixos-generators -f qcow -o $CACHE_DIR/tailscale/nixos/version -c generated-config.nix`
+   3. run `nixos-generators -f qcow -o $CACHE_DIR/mirage/nixos/version -c generated-config.nix`
    4. pass that to the steps that make the virtual machine
 
    It doesn't really make sense for us to use a premade virtual machine image
@@ -62,12 +62,12 @@ const nixosConfigTemplate = `
 # Nix's syntax was inspired by Haskell and other functional languages, so the
 # let .. in pattern is used to create scoped variables:
 let
-  # Define the package (derivation) for Tailscale based on the binaries we
+  # Define the package (derivation) for Mirage based on the binaries we
   # just built for this test:
-  testTailscale = pkgs.stdenv.mkDerivation {
+  testMirage = pkgs.stdenv.mkDerivation {
     # The name of the package. This usually includes a version however it
     # doesn't matter here.
-    name = "tailscale-test";
+    name = "mirage-test";
 
     # The path on disk to the "source code" of the package, in this case it is
     # the path to the binaries that are built. This needs to be the raw
@@ -79,7 +79,7 @@ let
     # built the binaries.
     phases = "installPhase";
 
-    # We need to wrap tailscaled such that it has iptables in its $PATH.
+    # We need to wrap miraged such that it has iptables in its $PATH.
     nativeBuildInputs = [ pkgs.makeWrapper ];
 
     # The install instructions for this package ('' ''defines a multi-line string).
@@ -91,19 +91,19 @@ let
       # Make the output folders for the package (systemd unit and binary folders).
       mkdir -p $out/bin
 
-      # Install tailscale{,d}
-      cp $src/tailscale $out/bin/tailscale
-      cp $src/tailscaled $out/bin/tailscaled
+      # Install mirage{,d}
+      cp $src/mirage $out/bin/mirage
+      cp $src/miraged $out/bin/miraged
 
-      # Wrap tailscaled with the ip and iptables commands.
-      wrapProgram $out/bin/tailscaled --prefix PATH : ${
+      # Wrap miraged with the ip and iptables commands.
+      wrapProgram $out/bin/miraged --prefix PATH : ${
         lib.makeBinPath [ iproute iptables ]
       }
 
       # Install systemd unit.
-      cp $src/systemd/tailscaled.service .
-      sed -i -e "s#/usr/sbin#$out/bin#" -e "/^EnvironmentFile/d" ./tailscaled.service
-      install -D -m0444 -t $out/lib/systemd/system ./tailscaled.service
+      cp $src/systemd/miraged.service .
+      sed -i -e "s#/usr/sbin#$out/bin#" -e "/^EnvironmentFile/d" ./miraged.service
+      install -D -m0444 -t $out/lib/systemd/system ./miraged.service
     '';
   };
 in {
@@ -137,28 +137,28 @@ in {
   # We want sshd running.
   services.openssh.enable = true;
 
-  # Tailscale settings:
-  services.tailscale = {
-    # We want Tailscale to start at boot.
+  # Mirage settings:
+  services.mirage = {
+    # We want Mirage to start at boot.
     enable = true;
 
-    # Use the Tailscale package we just assembled.
-    package = testTailscale;
+    # Use the Mirage package we just assembled.
+    package = testMirage;
   };
 
   # Override TS_LOG_TARGET to our private logcatcher.
-  systemd.services.tailscaled.environment."TS_LOG_TARGET" = "{{.LogTarget}}";
+  systemd.services.miraged.environment."MN_LOG_TARGET" = "{{.LogTarget}}";
 }`
 
 func (h *Harness) copyUnit(t *testing.T) {
 	t.Helper()
 
-	data, err := os.ReadFile("../../../cmd/tailscaled/tailscaled.service")
+	data, err := os.ReadFile("../../../cmd/miraged/miraged.service")
 	if err != nil {
 		t.Fatal(err)
 	}
 	os.MkdirAll(filepath.Join(h.binaryDir, "systemd"), 0755)
-	err = os.WriteFile(filepath.Join(h.binaryDir, "systemd", "tailscaled.service"), data, 0666)
+	err = os.WriteFile(filepath.Join(h.binaryDir, "systemd", "miraged.service"), data, 0666)
 	if err != nil {
 		t.Fatal(err)
 	}

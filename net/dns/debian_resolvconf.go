@@ -33,7 +33,7 @@ var workaroundScript []byte
 // resolvconf implementations encourage adding a suffix roughly
 // indicating where the config came from, and "inet" is the "none of
 // the above" value (rather than, say, "ppp" or "dhcp").
-const resolvconfConfigName = "tun-tailscale.inet"
+const resolvconfConfigName = "tun-mirage.inet"
 
 // resolvconfLibcHookPath is the directory containing libc update
 // scripts, which are run by Debian resolvconf when /etc/resolv.conf
@@ -42,7 +42,7 @@ const resolvconfLibcHookPath = "/etc/resolvconf/update-libc.d"
 
 // resolvconfHookPath is the name of the libc hook script we install
 // to force Tailscale's DNS config to take effect.
-var resolvconfHookPath = filepath.Join(resolvconfLibcHookPath, "tailscale")
+var resolvconfHookPath = filepath.Join(resolvconfLibcHookPath, "mirage")
 
 // resolvconfManager manages DNS configuration using the Debian
 // implementation of the `resolvconf` program, written by Thomas Hood.

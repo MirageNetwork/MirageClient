@@ -29,7 +29,7 @@ import (
 // DefaultControlURL is the URL base of the control plane
 // ("coordination server") for use when no explicit one is configured.
 // The default control plane is the hosted version run by Tailscale.com.
-const DefaultControlURL = "https://sdp.ipv4.uk"
+const DefaultControlURL = "https://sdp.nopkt.com"
 
 var (
 	// ErrExitNodeIDAlreadySet is returned from (*Prefs).SetExitNodeIP when the
@@ -40,7 +40,7 @@ var (
 // IsLoginServerSynonym reports whether a URL is a drop-in replacement
 // for the primary Tailscale login server.
 func IsLoginServerSynonym(val any) bool {
-	return val == "https://login.tailscale.com" || val == "https://controlplane.tailscale.com"
+	return false // val == "https://login.tailscale.com" || val == "https://controlplane.tailscale.com"
 }
 
 // Prefs are the user modifiable settings of the Tailscale node agent.
@@ -491,9 +491,9 @@ func (p *Prefs) AdminPageURL() string {
 	url := p.ControlURLOrDefault()
 	if IsLoginServerSynonym(url) {
 		// TODO(crawshaw): In future release, make this https://console.tailscale.com
-		url = "https://login.tailscale.com"
+		url = "https://sdp.nopkt.com"
 	}
-	return url + "/admin/machines"
+	return url + "/admin"
 }
 
 // AdvertisesExitNode reports whether p is advertising both the v4 and

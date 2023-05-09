@@ -1,4 +1,4 @@
-// Copyright (c) Tailscale Inc & AUTHORS
+// Copyright (c) Mirage Inc & AUTHORS
 // SPDX-License-Identifier: BSD-3-Clause
 
 // Package cli provides the skeleton of a CLI for building release packages.
@@ -27,7 +27,7 @@ func CLI(getTargets func() ([]dist.Target, error)) *ffcli.Command {
 	return &ffcli.Command{
 		Name:       "dist",
 		ShortUsage: "dist [flags] <command> [command flags]",
-		ShortHelp:  "Build tailscale release packages for distribution",
+		ShortHelp:  "Build mirage release packages for distribution",
 		LongHelp:   `For help on subcommands, add --help after: "dist list --help".`,
 		Subcommands: []*ffcli.Command{
 			{

@@ -21,7 +21,7 @@ func newOpenresolvManager() (openresolvManager, error) {
 }
 
 func (m openresolvManager) deleteTailscaleConfig() error {
-	cmd := exec.Command("resolvconf", "-f", "-d", "tailscale")
+	cmd := exec.Command("resolvconf", "-f", "-d", "mirage")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("running %s: %s", cmd, out)
@@ -37,7 +37,7 @@ func (m openresolvManager) SetDNS(config OSConfig) error {
 	var stdin bytes.Buffer
 	writeResolvConf(&stdin, config.Nameservers, config.SearchDomains)
 
-	cmd := exec.Command("resolvconf", "-m", "0", "-x", "-a", "tailscale")
+	cmd := exec.Command("resolvconf", "-m", "0", "-x", "-a", "mirage")
 	cmd.Stdin = &stdin
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -59,10 +59,10 @@ func (m openresolvManager) GetBaseConfig() (OSConfig, error) {
 		return OSConfig{}, err
 	}
 
-	// Remove the "tailscale" snippet from the list.
+	// Remove the "mirage" snippet from the list.
 	args := []string{"-l"}
 	for _, f := range strings.Split(strings.TrimSpace(string(bs)), " ") {
-		if f == "tailscale" {
+		if f == "mirage" {
 			continue
 		}
 		args = append(args, f)

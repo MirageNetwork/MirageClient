@@ -1,0 +1,23 @@
+[Unit]
+Description=Mirage node agent
+Wants=network-pre.target
+After=network-pre.target NetworkManager.service systemd-resolved.service
+
+[Service]
+EnvironmentFile=/etc/default/miraged
+ExecStartPre=/usr/sbin/miraged --cleanup
+ExecStart=/usr/sbin/miraged --state=/var/lib/mirage/miraged.state --socket=/run/mirage/miraged.sock --port=${PORT} $FLAGS
+ExecStopPost=/usr/sbin/miraged --cleanup
+
+Restart=on-failure
+
+RuntimeDirectory=mirage
+RuntimeDirectoryMode=0755
+StateDirectory=mirage
+StateDirectoryMode=0700
+CacheDirectory=mirage
+CacheDirectoryMode=0750
+Type=notify
+
+[Install]
+WantedBy=multi-user.target

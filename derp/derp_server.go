@@ -32,12 +32,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/patrickmn/go-cache"
+	"github.com/robfig/cron/v3"
 	"go4.org/mem"
 	"golang.org/x/sync/errgroup"
 	"tailscale.com/client/tailscale"
+	"tailscale.com/control/controlclient"
 	"tailscale.com/disco"
 	"tailscale.com/envknob"
 	"tailscale.com/metrics"
+	"tailscale.com/net/dnscache"
+	"tailscale.com/net/netmon"
 	"tailscale.com/syncs"
 	"tailscale.com/tstime/rate"
 	"tailscale.com/types/key"
@@ -92,6 +97,19 @@ type align64 [0]atomic.Int64 // for side effect of its 64-bit alignment
 
 // Server is a DERP server.
 type Server struct {
+	ctrlURL    string // 控制器地址
+	derpID     string // 自身的ID序列
+	ctrlPubkey key.MachinePublic
+	naviPriKey key.MachinePrivate         // 用于和控制器进行请求
+	ctx        context.Context            // noise请求上下文
+	nc         *controlclient.NoiseClient // 用于和控制器进行请求
+
+	netMon   *netmon.Monitor    // or nil
+	dnsCache *dnscache.Resolver // or nil
+
+	trustNodesCache *cache.Cache // 用于存储受信客户端信息
+	Cronjob         *cron.Cron   // 用于定时从控制器拉取受信客户端信息
+
 	// WriteTimeout, if non-zero, specifies how long to wait
 	// before failing when writing to a client.
 	WriteTimeout time.Duration
@@ -319,6 +337,7 @@ func NewServer(privateKey key.NodePrivate, logf logger.Logf) *Server {
 		tcpRtt:               metrics.LabelMap{Label: "le"},
 		keyOfAddr:            map[netip.AddrPort]key.NodePublic{},
 	}
+
 	s.initMetacert()
 	s.packetsRecvDisco = s.packetsRecvByKind.Get("disco")
 	s.packetsRecvOther = s.packetsRecvByKind.Get("other")
@@ -1094,19 +1113,27 @@ func (c *sclient) requestMeshUpdate() {
 	}
 }
 
+// TODO: cgao6 - 我们这里让DERP直接跟控制器进行noise协议会话查询
 func (s *Server) verifyClient(clientKey key.NodePublic, info *clientInfo) error {
 	if !s.verifyClients {
 		return nil
 	}
-	status, err := tailscale.Status(context.TODO())
-	if err != nil {
-		return fmt.Errorf("failed to query local tailscaled status: %w", err)
-	}
-	if clientKey == status.Self.PublicKey {
-		return nil
-	}
-	if _, exists := status.Peer[clientKey]; !exists {
-		return fmt.Errorf("client %v not in set of peers", clientKey)
+	if s.ctrlURL == "" || s.derpID == "" { // 未受管，采用和TS同样验证方式
+		status, err := tailscale.Status(context.TODO())
+		if err != nil {
+			return fmt.Errorf("failed to query local tailscaled status: %w", err)
+		}
+		if clientKey == status.Self.PublicKey {
+			return nil
+		}
+		if _, exists := status.Peer[clientKey]; !exists {
+			return fmt.Errorf("client %v not in set of peers", clientKey)
+		}
+	} else { // 受管，采用控制器验证
+		log.Printf("derp: verify client %v", clientKey.String())
+		if _, ok := s.trustNodesCache.Get(strings.TrimPrefix(clientKey.String(), "nodekey:")); !ok {
+			return fmt.Errorf("client %v not acceptable due to ctrl server", clientKey)
+		}
 	}
 	// TODO(bradfitz): add policy for configurable bandwidth rate per client?
 	return nil

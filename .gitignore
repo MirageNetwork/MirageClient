@@ -6,6 +6,12 @@
 *.so
 *.dylib
 *.spk
+__debug_bin
+mirageNavi
+.DS_Store
+cmd/dist/dist
+
+*__debug_bin
 
 mirage
 miraged
@@ -29,7 +35,7 @@ cmd/tailscaled/tailscaled
 .envrc
 
 # Ignore personal VS Code settings
-#.vscode/
+.vscode
 
 # Support personal project-specific GOPATH
 .gopath/

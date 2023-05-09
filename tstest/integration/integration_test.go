@@ -758,7 +758,7 @@ type testNode struct {
 // The node is not started automatically.
 func newTestNode(t *testing.T, env *testEnv) *testNode {
 	dir := t.TempDir()
-	sockFile := filepath.Join(dir, "tailscale.sock")
+	sockFile := filepath.Join(dir, "mirage.sock")
 	if len(sockFile) >= 104 {
 		t.Fatalf("sockFile path %q (len %v) is too long, must be < 104", sockFile, len(sockFile))
 	}
@@ -766,7 +766,7 @@ func newTestNode(t *testing.T, env *testEnv) *testNode {
 		env:       env,
 		dir:       dir,
 		sockFile:  sockFile,
-		stateFile: filepath.Join(dir, "tailscale.state"),
+		stateFile: filepath.Join(dir, "mirage.state"),
 	}
 }
 

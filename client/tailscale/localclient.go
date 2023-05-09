@@ -431,6 +431,27 @@ func (lc *LocalClient) GetStore(ctx context.Context, key string) ([]byte, error)
 	return value, nil
 }
 
+// cgao6: 增加设置开机自启动的接口
+func (lc *LocalClient) SetAutoStartUp(ctx context.Context) error {
+	body, err := lc.send(ctx, "POST", "/localapi/v0/swicthAutoStart", 200, nil)
+	if err != nil {
+		return fmt.Errorf("error %w: %s", err, body)
+	}
+	return nil
+}
+
+// cgao6: 增加检查开机自启动的接口
+func (lc *LocalClient) GetAutoStartUp(ctx context.Context) (bool, error) {
+	body, err := lc.send(ctx, "GET", "/localapi/v0/getAutoStart", 200, nil)
+	if err != nil {
+		return false, fmt.Errorf("error %w: %s", err, body)
+	}
+	if string(body) == "false" {
+		return false, nil
+	}
+	return true, nil
+}
+
 // SetComponentDebugLogging sets component's debug logging enabled for
 // the provided duration. If the duration is in the past, the debug logging
 // is disabled.

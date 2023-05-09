@@ -1,4 +1,4 @@
-// Copyright (c) Tailscale Inc & AUTHORS
+// Copyright (c) Mirage Inc & AUTHORS
 // SPDX-License-Identifier: BSD-3-Clause
 
 // Package mkversion gets version info from git and provides a bunch of
@@ -35,23 +35,23 @@ type VersionInfo struct {
 	// Long is the long version string. See the documentation for version.Long
 	// for possible values.
 	Long string
-	// GitHash is the git hash of the tailscale.com Go module.
+	// GitHash is the git hash of the MirageClient Go module.
 	GitHash string
 	// OtherHash is the git hash of a supplemental git repository, if any. For
-	// example, the commit of the tailscale-android repository.
+	// example, the commit of the MirageX repository.
 	OtherHash string
 	// Xcode is the version string that gets embedded into Xcode builds for the
-	// Tailscale iOS app and macOS standalone (aka "macsys") app.
+	// Mirage iOS app and macOS standalone (aka "macsys") app.
 	//
 	// It is the same as Short, but with 100 added to the major version number.
 	// This is because Apple requires monotonically increasing version numbers,
-	// and very early builds of Tailscale used a single incrementing integer,
+	// and very early builds of Mirage used a single incrementing integer,
 	// which the Apple interprets as the major version number. When we switched
 	// to the current scheme, we started the major version number at 100 (v0,
 	// plus 100) to make the transition.
 	Xcode string
 	// XcodeMacOS is the version string that gets embedded into Xcode builds for
-	// the Tailscale macOS app store app.
+	// the Mirage macOS app store app.
 	//
 	// This used to be the same as Xcode, but at some point Xcode reverted to
 	// auto-incrementing build numbers instead of using the version we embedded.
@@ -317,12 +317,12 @@ func infoFromCache(ref string, runner dirRunner) (verInfo, error) {
 	if err != nil {
 		return verInfo{}, fmt.Errorf("Getting user cache dir: %w", err)
 	}
-	tailscaleCache := filepath.Join(cacheDir, "tailscale-oss")
-	r := dirRunner(tailscaleCache)
+	mirageCache := filepath.Join(cacheDir, "mirage-oss")
+	r := dirRunner(mirageCache)
 
-	if _, err := os.Stat(tailscaleCache); err != nil {
-		if !runner.ok("git", "clone", "https://github.com/tailscale/tailscale", tailscaleCache) {
-			return verInfo{}, fmt.Errorf("cloning tailscale.com repo failed")
+	if _, err := os.Stat(mirageCache); err != nil {
+		if !runner.ok("git", "clone", "https://github.com/MirageNetwork/MirageClient", mirageCache) {
+			return verInfo{}, fmt.Errorf("cloning MirageClient repo failed")
 		}
 	}
 

@@ -33,7 +33,7 @@ func legacyPrefsDir(uid ipn.WindowsUserID) (string, error) {
 	if usr.HomeDir == "" {
 		return "", fmt.Errorf("user %q does not have a home directory", uid)
 	}
-	userLegacyPrefsDir := filepath.Join(usr.HomeDir, "AppData", "Local", "Tailscale")
+	userLegacyPrefsDir := filepath.Join(usr.HomeDir, "AppData", "Local", "Mirage")
 	return userLegacyPrefsDir, nil
 }
 
