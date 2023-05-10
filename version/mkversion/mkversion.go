@@ -186,6 +186,25 @@ func tailscaleModuleRef(modBs []byte) (string, error) {
 		// Get the last - separated part of req.Mod.Version
 		// (which is the git hash).
 		if i := strings.LastIndexByte(req.Mod.Version, '-'); i != -1 {
+			//cgao6
+			if req.Mod.Version[i+1:] == "000000000000" {
+				for _, rp := range mod.Replace {
+					if rp.Old.Path == "tailscale.com" {
+						runner := dirRunner("")
+						gitRoot, err := runner.output("git", "rev-parse", "--show-toplevel")
+						if err != nil {
+							return "", fmt.Errorf("finding git root: %w", err)
+						}
+						runner = dirRunner(filepath.Join(gitRoot, rp.New.Path))
+						ref, err := runner.output("git", "rev-parse", "HEAD")
+						if err != nil {
+							return "", fmt.Errorf("finding git root: %w", err)
+						}
+						return ref, nil
+					}
+				}
+			}
+
 			return req.Mod.Version[i+1:], nil
 		}
 		// If there are no dashes, the version is a tag.
