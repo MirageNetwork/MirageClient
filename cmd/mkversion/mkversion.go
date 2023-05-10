@@ -34,7 +34,7 @@ func main() {
 	// Copyright and the client capability are not part of the version
 	// information, but similarly used in Xcode builds to embed in the metadata,
 	// thus generate them now.
-	copyright := fmt.Sprintf("Copyright © %d MirageNetwork Inc. All Rights Reserved.", time.Now().Year())
+	copyright := fmt.Sprintf("Copyright © %d Mirage Team. All Rights Reserved.", time.Now().Year())
 	fmt.Fprintf(&b, "VERSION_COPYRIGHT=%q\n", copyright)
 	fmt.Fprintf(&b, "VERSION_CAPABILITY=%d\n", tailcfg.CurrentCapabilityVersion)
 	s := bufio.NewScanner(&b)
