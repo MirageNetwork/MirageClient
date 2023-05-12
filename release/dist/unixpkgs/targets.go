@@ -46,6 +46,7 @@ func Targets() []dist.Target {
 
 	// Special case: AMD Geode is 386 with softfloat. Tarballs only since it's
 	// an ancient architecture.
+	/* cgao6 目前没看到支持AMD Geode的必要
 	ret = append(ret, &tgzTarget{
 		filenameArch: "geode",
 		goenv: map[string]string{
@@ -54,6 +55,7 @@ func Targets() []dist.Target {
 			"GO386":  "softfloat",
 		},
 	})
+	*/
 
 	sort.Slice(ret, func(i, j int) bool {
 		return ret[i].String() < ret[j].String()
