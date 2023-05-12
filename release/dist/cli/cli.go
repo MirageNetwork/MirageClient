@@ -138,6 +138,8 @@ func runBuild(ctx context.Context, filters []string, targets []dist.Target) erro
 		}
 	}
 
+	fmt.Println("ShortVersion=" + b.Version.Short)
+	fmt.Println("LongVersion=" + b.Version.Long)
 	fmt.Println("Done! Took", time.Since(st))
 	return nil
 }
