@@ -94,7 +94,6 @@ var (
 		// "linux/mips":     true,
 		// "linux/mipsle":   true,
 		// "linux/mips64":   true,
-		// "linux/mips64le": true,
 	}
 
 	rpms = map[string]bool{
@@ -106,9 +105,7 @@ var (
 		// TODO: maybe mipses, we accidentally started building them at some
 		// point even though they probably don't work right.
 		// "linux/mips":     true,
-		// "linux/mipsle":   true,
 		// "linux/mips64":   true,
-		// "linux/mips64le": true,
 	}
 )
 

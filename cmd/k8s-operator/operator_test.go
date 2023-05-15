@@ -814,7 +814,6 @@ func (c *fakeTSClient) CreateKey(ctx context.Context, caps tailscale.KeyCapabili
 	k := &tailscale.Key{
 		ID:           "key",
 		Created:      time.Now(),
-		Expires:      time.Now().Add(24 * time.Hour),
 		Capabilities: caps,
 	}
 	return "secret-authkey", k, nil

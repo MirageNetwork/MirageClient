@@ -48,6 +48,7 @@ import (
 	"tailscale.com/types/logger"
 	"tailscale.com/types/opt"
 	"tailscale.com/util/dnsname"
+	"tailscale.com/version"
 )
 
 func main() {
@@ -235,7 +236,7 @@ waitOnline:
 		startlog.Fatalf("could not create controller: %v", err)
 	}
 
-	startlog.Infof("Startup complete, operator running")
+	startlog.Infof("Startup complete, operator running, version: %s", version.Long())
 	if shouldRunAuthProxy {
 		cfg, err := restConfig.TransportConfig()
 		if err != nil {
@@ -566,6 +567,9 @@ func (a *ServiceReconciler) getDeviceInfo(ctx context.Context, svc *corev1.Servi
 	if err != nil {
 		return "", "", err
 	}
+	if sec == nil {
+		return "", "", nil
+	}
 	id = string(sec.Data["device_id"])
 	if id == "" {
 		return "", "", nil
@@ -589,6 +593,7 @@ func (a *ServiceReconciler) newAuthKey(ctx context.Context, tags []string) (stri
 			},
 		},
 	}
+
 	key, _, err := a.tsClient.CreateKey(ctx, caps)
 	if err != nil {
 		return "", err
