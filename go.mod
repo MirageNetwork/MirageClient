@@ -43,7 +43,6 @@ require (
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.16.5
 	github.com/kortschak/wol v0.0.0-20200729010619-da482cc4850a
-	github.com/libdns/libdns v0.2.1
 	github.com/mattn/go-colorable v0.1.13
 	github.com/mattn/go-isatty v0.0.18
 	github.com/mdlayher/genetlink v1.3.2
@@ -66,7 +65,6 @@ require (
 	github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a
 	github.com/tailscale/mkctr v0.0.0-20220601142259-c0b937af2e89
 	github.com/tailscale/netlink v1.1.1-0.20211101221916-cabfb018fe85
-	github.com/tailscale/win v0.0.0-20230202211146-fd21cc0d8ef1
 	github.com/tailscale/wireguard-go v0.0.0-20230410165232-af172621b4dd
 	github.com/tc-hib/winres v0.2.0
 	github.com/tcnksm/go-httpstat v0.2.0
@@ -102,16 +100,7 @@ require (
 	software.sslmate.com/src/go-pkcs12 v0.2.0
 )
 
-require (
-	github.com/klauspost/cpuid/v2 v2.1.1 // indirect
-	github.com/mholt/acmez v1.0.4 // indirect
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.597 // indirect
-)
-
-require (
-	4d63.com/gocheckcompilerdirectives v1.2.1 // indirect
-	gopkg.in/Knetic/govaluate.v3 v3.0.0 // indirect
-)
+require 4d63.com/gocheckcompilerdirectives v1.2.1 // indirect
 
 require (
 	4d63.com/gochecknoglobals v0.2.1 // indirect
@@ -156,7 +145,6 @@ require (
 	github.com/breml/bidichk v0.2.4 // indirect
 	github.com/breml/errchkjson v0.3.1 // indirect
 	github.com/butuzov/ireturn v0.2.0 // indirect
-	github.com/caddyserver/certmagic v0.17.2
 	github.com/cavaliergopher/cpio v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/charithe/durationcheck v0.0.10 // indirect
@@ -255,10 +243,6 @@ require (
 	github.com/ldez/gomoddirectives v0.2.3 // indirect
 	github.com/ldez/tagliatelle v0.5.0 // indirect
 	github.com/leonklingele/grouper v1.1.1 // indirect
-	github.com/libdns/alidns v1.0.2
-	github.com/libdns/cloudflare v0.1.0
-	github.com/libdns/namesilo v0.1.0
-	github.com/libdns/tencentcloud v1.0.0
 	github.com/lufeee/execinquery v1.2.1 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -317,7 +301,6 @@ require (
 	github.com/sivchari/nosnakecase v1.7.0 // indirect
 	github.com/sivchari/tenv v1.7.1 // indirect
 	github.com/skeema/knownhosts v1.1.0 // indirect
-	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/sonatard/noctx v0.0.2 // indirect
 	github.com/sourcegraph/go-diff v0.7.0 // indirect
 	github.com/spf13/afero v1.9.5 // indirect
@@ -332,7 +315,6 @@ require (
 	github.com/stretchr/testify v1.8.2 // indirect
 	github.com/subosito/gotenv v1.4.2 // indirect
 	github.com/t-yuki/gocover-cobertura v0.0.0-20180217150009-aaee18c8195c // indirect
-	github.com/tailscale/walk v0.0.0-20230210175544-f4cdc7d889ba
 	github.com/tdakkota/asciicheck v0.2.0 // indirect
 	github.com/tetafro/godot v1.4.11 // indirect
 	github.com/timakin/bodyclose v0.0.0-20230421092635-574207250966 // indirect
