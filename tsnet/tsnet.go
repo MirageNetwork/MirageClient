@@ -58,6 +58,8 @@ import (
 
 func inTest() bool { return flag.Lookup("test.v") != nil }
 
+var altDebugServer func(handler http.Handler)
+
 // Server is an embedded Tailscale server.
 //
 // Its exported fields may be changed until the first call to Listen.
@@ -568,6 +570,10 @@ func (s *Server) start() (reterr error) {
 	lah.PermitWrite = true
 	lah.PermitRead = true
 
+	// run a local debug server so we can poke at internals
+	if altDebugServer != nil {
+		altDebugServer(lah)
+	}
 	// Create an in-process listener.
 	// nettest.Listen provides a in-memory pipe based implementation for net.Conn.
 	lal := memnet.Listen("local-miraged.sock:80")
