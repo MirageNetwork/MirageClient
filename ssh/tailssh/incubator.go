@@ -34,6 +34,7 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sys/unix"
 	"tailscale.com/cmd/tailscaled/childproc"
+	"tailscale.com/hostinfo"
 	"tailscale.com/tempfork/gliderlabs/ssh"
 	"tailscale.com/types/logger"
 	"tailscale.com/version/distro"
@@ -120,10 +121,18 @@ func (ss *sshSession) newIncubatorCommand() (cmd *exec.Cmd) {
 		if isShell {
 			incubatorArgs = append(incubatorArgs, "--shell")
 		}
-		if isShell || runtime.GOOS == "darwin" {
-			// Only the macOS version of the login command supports executing a
-			// command, all other versions only support launching a shell
-			// without taking any arguments.
+		// Only the macOS version of the login command supports executing a
+		// command, all other versions only support launching a shell
+		// without taking any arguments.
+		shouldUseLoginCmd := isShell || runtime.GOOS == "darwin"
+		if hostinfo.IsSELinuxEnforcing() {
+			// If we're running on a SELinux-enabled system, the login
+			// command will be unable to set the correct context for the
+			// shell. Fall back to using the incubator to launch the shell.
+			// See http://github.com/tailscale/tailscale/issues/4908.
+			shouldUseLoginCmd = false
+		}
+		if shouldUseLoginCmd {
 			if lp, err := exec.LookPath("login"); err == nil {
 				incubatorArgs = append(incubatorArgs, "--login-cmd="+lp)
 			}
@@ -452,7 +461,7 @@ func (ss *sshSession) launchProcess() error {
 		return ss.startWithStdPipes()
 	}
 	ss.ptyReq = &ptyReq
-	pty, err := ss.startWithPTY()
+	pty, tty, err := ss.startWithPTY()
 	if err != nil {
 		return err
 	}
@@ -461,13 +470,16 @@ func (ss *sshSession) launchProcess() error {
 	// dup.
 	ptyDup, err := syscall.Dup(int(pty.Fd()))
 	if err != nil {
+		pty.Close()
+		tty.Close()
 		return err
 	}
 	go resizeWindow(ptyDup /* arbitrary fd */, winCh)
 
-	ss.stdin = pty
-	ss.stdout = os.NewFile(uintptr(ptyDup), pty.Name())
-	ss.stderr = nil // not available for pty
+	ss.wrStdin = pty
+	ss.rdStdout = os.NewFile(uintptr(ptyDup), pty.Name())
+	ss.rdStderr = nil // not available for pty
+	ss.childPipes = []io.Closer{tty}
 
 	return nil
 }
@@ -544,17 +556,16 @@ var opcodeShortName = map[uint8]string{
 }
 
 // startWithPTY starts cmd with a pseudo-terminal attached to Stdin, Stdout and Stderr.
-func (ss *sshSession) startWithPTY() (ptyFile *os.File, err error) {
+func (ss *sshSession) startWithPTY() (ptyFile, tty *os.File, err error) {
 	ptyReq := ss.ptyReq
 	cmd := ss.cmd
 	if cmd == nil {
-		return nil, errors.New("nil ss.cmd")
+		return nil, nil, errors.New("nil ss.cmd")
 	}
 	if ptyReq == nil {
-		return nil, errors.New("nil ss.ptyReq")
+		return nil, nil, errors.New("nil ss.ptyReq")
 	}
 
-	var tty *os.File
 	ptyFile, tty, err = pty.Open()
 	if err != nil {
 		err = fmt.Errorf("pty.Open: %w", err)
@@ -568,7 +579,7 @@ func (ss *sshSession) startWithPTY() (ptyFile *os.File, err error) {
 	}()
 	ptyRawConn, err := tty.SyscallConn()
 	if err != nil {
-		return nil, fmt.Errorf("SyscallConn: %w", err)
+		return nil, nil, fmt.Errorf("SyscallConn: %w", err)
 	}
 	var ctlErr error
 	if err := ptyRawConn.Control(func(fd uintptr) {
@@ -615,10 +626,10 @@ func (ss *sshSession) startWithPTY() (ptyFile *os.File, err error) {
 			return
 		}
 	}); err != nil {
-		return nil, fmt.Errorf("ptyRawConn.Control: %w", err)
+		return nil, nil, fmt.Errorf("ptyRawConn.Control: %w", err)
 	}
 	if ctlErr != nil {
-		return nil, fmt.Errorf("ptyRawConn.Control func: %w", ctlErr)
+		return nil, nil, fmt.Errorf("ptyRawConn.Control func: %w", ctlErr)
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setctty: true,
@@ -642,45 +653,34 @@ func (ss *sshSession) startWithPTY() (ptyFile *os.File, err error) {
 	if err = cmd.Start(); err != nil {
 		return
 	}
-	return ptyFile, nil
+	return ptyFile, tty, nil
 }
 
 // startWithStdPipes starts cmd with os.Pipe for Stdin, Stdout and Stderr.
 func (ss *sshSession) startWithStdPipes() (err error) {
-	var stdin io.WriteCloser
-	var stdout, stderr io.ReadCloser
+	var rdStdin, wrStdout, wrStderr io.ReadWriteCloser
 	defer func() {
 		if err != nil {
-			for _, c := range []io.Closer{stdin, stdout, stderr} {
-				if c != nil {
-					c.Close()
-				}
-			}
+			closeAll(rdStdin, ss.wrStdin, ss.rdStdout, wrStdout, ss.rdStderr, wrStderr)
 		}
 	}()
-	cmd := ss.cmd
-	if cmd == nil {
+	if ss.cmd == nil {
 		return errors.New("nil cmd")
 	}
-	stdin, err = cmd.StdinPipe()
-	if err != nil {
+	if rdStdin, ss.wrStdin, err = os.Pipe(); err != nil {
 		return err
 	}
-	stdout, err = cmd.StdoutPipe()
-	if err != nil {
+	if ss.rdStdout, wrStdout, err = os.Pipe(); err != nil {
 		return err
 	}
-	stderr, err = cmd.StderrPipe()
-	if err != nil {
+	if ss.rdStderr, wrStderr, err = os.Pipe(); err != nil {
 		return err
 	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	ss.stdin = stdin
-	ss.stdout = stdout
-	ss.stderr = stderr
-	return nil
+	ss.cmd.Stdin = rdStdin
+	ss.cmd.Stdout = wrStdout
+	ss.cmd.Stderr = wrStderr
+	ss.childPipes = []io.Closer{rdStdin, wrStdout, wrStderr}
+	return ss.cmd.Start()
 }
 
 func envForUser(u *userMeta) []string {

@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	gossh "github.com/tailscale/golang-x-crypto/ssh"
@@ -421,6 +422,7 @@ func (srv *server) newConn() (*conn, error) {
 	c := &conn{srv: srv}
 	now := srv.now()
 	c.connID = fmt.Sprintf("ssh-conn-%s-%02x", now.UTC().Format("20060102T150405"), randBytes(5))
+	fwdHandler := &ssh.ForwardedTCPHandler{}
 	c.Server = &ssh.Server{
 		Version:              "Tailscale",
 		ServerConfigCallback: c.ServerConfig,
@@ -429,8 +431,9 @@ func (srv *server) newConn() (*conn, error) {
 		PublicKeyHandler:    c.PublicKeyHandler,
 		PasswordHandler:     c.fakePasswordHandler,
 
-		Handler:                     c.handleSessionPostSSHAuth,
-		LocalPortForwardingCallback: c.mayForwardLocalPortTo,
+		Handler:                       c.handleSessionPostSSHAuth,
+		LocalPortForwardingCallback:   c.mayForwardLocalPortTo,
+		ReversePortForwardingCallback: c.mayReversePortForwardTo,
 		SubsystemHandlers: map[string]ssh.SubsystemHandler{
 			"sftp": c.handleSessionPostSSHAuth,
 		},
@@ -440,7 +443,10 @@ func (srv *server) newConn() (*conn, error) {
 		ChannelHandlers: map[string]ssh.ChannelHandler{
 			"direct-tcpip": ssh.DirectTCPIPHandler,
 		},
-		RequestHandlers: map[string]ssh.RequestHandler{},
+		RequestHandlers: map[string]ssh.RequestHandler{
+			"tcpip-forward":        fwdHandler.HandleSSHRequest,
+			"cancel-tcpip-forward": fwdHandler.HandleSSHRequest,
+		},
 	}
 	ss := c.Server
 	for k, v := range ssh.DefaultRequestHandlers {
@@ -460,6 +466,17 @@ func (srv *server) newConn() (*conn, error) {
 		ss.AddHostKey(signer)
 	}
 	return c, nil
+}
+
+// mayReversePortPortForwardTo reports whether the ctx should be allowed to port forward
+// to the specified host and port.
+// TODO(bradfitz/maisem): should we have more checks on host/port?
+func (c *conn) mayReversePortForwardTo(ctx ssh.Context, destinationHost string, destinationPort uint32) bool {
+	if c.finalAction != nil && c.finalAction.AllowRemotePortForwarding {
+		metricRemotePortForward.Add(1)
+		return true
+	}
+	return false
 }
 
 // mayForwardLocalPortTo reports whether the ctx should be allowed to port forward
@@ -806,11 +823,16 @@ type sshSession struct {
 	agentListener net.Listener // non-nil if agent-forwarding requested+allowed
 
 	// initialized by launchProcess:
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
-	stderr io.Reader // nil for pty sessions
-	ptyReq *ssh.Pty  // non-nil for pty sessions
+	cmd      *exec.Cmd
+	wrStdin  io.WriteCloser
+	rdStdout io.ReadCloser
+	rdStderr io.ReadCloser // rdStderr is nil for pty sessions
+	ptyReq   *ssh.Pty      // non-nil for pty sessions
+
+	// childPipes is a list of pipes that need to be closed when the process exits.
+	// For pty sessions, this is the tty fd.
+	// For non-pty sessions, this is the stdin, stdout, stderr fds.
+	childPipes []io.Closer
 
 	// We use this sync.Once to ensure that we only terminate the process once,
 	// either it exits itself or is terminated
@@ -1087,48 +1109,67 @@ func (ss *sshSession) run() {
 	}
 	go ss.killProcessOnContextDone()
 
+	var processDone atomic.Bool
 	go func() {
-		defer ss.stdin.Close()
-		if _, err := io.Copy(rec.writer("i", ss.stdin), ss); err != nil {
+		defer ss.wrStdin.Close()
+		if _, err := io.Copy(rec.writer("i", ss.wrStdin), ss); err != nil {
 			logf("stdin copy: %v", err)
 			ss.cancelCtx(err)
 		}
 	}()
+	outputDone := make(chan struct{})
 	var openOutputStreams atomic.Int32
-	if ss.stderr != nil {
+	if ss.rdStderr != nil {
 		openOutputStreams.Store(2)
 	} else {
 		openOutputStreams.Store(1)
 	}
 	go func() {
-		defer ss.stdout.Close()
-		_, err := io.Copy(rec.writer("o", ss), ss.stdout)
+		defer ss.rdStdout.Close()
+		_, err := io.Copy(rec.writer("o", ss), ss.rdStdout)
 		if err != nil && !errors.Is(err, io.EOF) {
-			logf("stdout copy: %v", err)
-			ss.cancelCtx(err)
+			isErrBecauseProcessExited := processDone.Load() && errors.Is(err, syscall.EIO)
+			if !isErrBecauseProcessExited {
+				logf("stdout copy: %v, %T", err)
+				ss.cancelCtx(err)
+			}
 		}
 		if openOutputStreams.Add(-1) == 0 {
 			ss.CloseWrite()
+			close(outputDone)
 		}
 	}()
-	// stderr is nil for ptys.
-	if ss.stderr != nil {
+	// rdStderr is nil for ptys.
+	if ss.rdStderr != nil {
 		go func() {
-			_, err := io.Copy(ss.Stderr(), ss.stderr)
+			defer ss.rdStderr.Close()
+			_, err := io.Copy(ss.Stderr(), ss.rdStderr)
 			if err != nil {
 				logf("stderr copy: %v", err)
 			}
 			if openOutputStreams.Add(-1) == 0 {
 				ss.CloseWrite()
+				close(outputDone)
 			}
 		}()
 	}
 
 	err = ss.cmd.Wait()
+	processDone.Store(true)
+
 	// This will either make the SSH Termination goroutine be a no-op,
 	// or itself will be a no-op because the process was killed by the
 	// aforementioned goroutine.
 	ss.exitOnce.Do(func() {})
+
+	// Close the process-side of all pipes to signal the asynchronous
+	// io.Copy routines reading/writing from the pipes to terminate.
+	// Block for the io.Copy to finish before calling ss.Exit below.
+	closeAll(ss.childPipes...)
+	select {
+	case <-outputDone:
+	case <-ss.ctx.Done():
+	}
 
 	if err == nil {
 		ss.logf("Session complete")
@@ -1596,7 +1637,11 @@ func (ss *sshSession) startNewRecording() (_ *recording, err error) {
 		rec.out, attempts, errChan, err = ss.connectToRecorder(ctx, recorders)
 		if err != nil {
 			if onFailure != nil && onFailure.NotifyURL != "" && len(attempts) > 0 {
-				ss.notifyControl(ctx, nodeKey, tailcfg.SSHSessionRecordingRejected, attempts, onFailure.NotifyURL)
+				eventType := tailcfg.SSHSessionRecordingFailed
+				if onFailure.RejectSessionWithMessage != "" {
+					eventType = tailcfg.SSHSessionRecordingRejected
+				}
+				ss.notifyControl(ctx, nodeKey, eventType, attempts, onFailure.NotifyURL)
 			}
 
 			if onFailure != nil && onFailure.RejectSessionWithMessage != "" {
@@ -1619,7 +1664,12 @@ func (ss *sshSession) startNewRecording() (_ *recording, err error) {
 				lastAttempt := attempts[len(attempts)-1]
 				lastAttempt.FailureMessage = err.Error()
 
-				ss.notifyControl(ctx, nodeKey, tailcfg.SSHSessionRecordingTerminated, attempts, onFailure.NotifyURL)
+				eventType := tailcfg.SSHSessionRecordingFailed
+				if onFailure.TerminateSessionWithMessage != "" {
+					eventType = tailcfg.SSHSessionRecordingTerminated
+				}
+
+				ss.notifyControl(ctx, nodeKey, eventType, attempts, onFailure.NotifyURL)
 			}
 			if onFailure != nil && onFailure.TerminateSessionWithMessage != "" {
 				ss.logf("recording: error uploading recording (closing session): %v", err)
@@ -1840,6 +1890,7 @@ var (
 	metricPolicyChangeKick     = clientmetric.NewCounter("ssh_policy_change_kick")
 	metricSFTP                 = clientmetric.NewCounter("ssh_sftp_requests")
 	metricLocalPortForward     = clientmetric.NewCounter("ssh_local_port_forward_requests")
+	metricRemotePortForward    = clientmetric.NewCounter("ssh_remote_port_forward_requests")
 )
 
 // userVisibleError is a wrapper around an error that implements
@@ -1856,4 +1907,12 @@ func (ue userVisibleError) SSHTerminationMessage() string { return ue.msg }
 type SSHTerminationError interface {
 	error
 	SSHTerminationMessage() string
+}
+
+func closeAll(cs ...io.Closer) {
+	for _, c := range cs {
+		if c != nil {
+			c.Close()
+		}
+	}
 }

@@ -3,7 +3,7 @@
 
 package tailcfg
 
-//go:generate go run tailscale.com/cmd/viewer --type=User,Node,Hostinfo,NetInfo,Login,DNSConfig,RegisterResponse,DERPRegion,DERPMap,DERPNode,SSHRule,SSHAction,SSHPrincipal,ControlDialPlan --clonefunc
+//go:generate go run tailscale.com/cmd/viewer --type=User,Node,Hostinfo,NetInfo,Login,DNSConfig,RegisterResponse,DERPRegion,DERPMap,DERPNode,SSHRule,SSHAction,SSHPrincipal,ControlDialPlan,Location --clonefunc
 
 import (
 	"bytes"
@@ -99,7 +99,8 @@ type CapabilityVersion int
 //   - 60: 2023-04-06: Client understands IsWireGuardOnly
 //   - 61: 2023-04-18: Client understand SSHAction.SSHRecorderFailureAction
 //   - 62: 2023-05-05: Client can notify control over noise for SSHEventNotificationRequest recording failure events
-const CurrentCapabilityVersion CapabilityVersion = 62
+//   - 63: 2023-06-08: Client understands SSHAction.AllowRemotePortForwarding.
+const CurrentCapabilityVersion CapabilityVersion = 63
 
 type StableID string
 
@@ -530,6 +531,24 @@ type Service struct {
 	// TODO(apenwarr): add "tags" here for each service?
 }
 
+// Location represents geographical location data about a
+// Tailscale host. Location is optional and only set if
+// explicitly declared by a node.
+type Location struct {
+	Country     string `json:",omitempty"` // User friendly country name, with proper capitalization, e.g "Canada"
+	CountryCode string `json:",omitempty"` // ISO 3166-1 alpha-2 in lower case, e.g "ca"
+	City        string `json:",omitempty"` // User friendly city name, with proper capitalization, e.g. "Squamish"
+	CityCode    string `json:",omitempty"`
+
+	// Priority determines the priority an exit node is given when the
+	// location data between two or more nodes is tied.
+	// A higher value indicates that the exit node is more preferable
+	// for use.
+	// A value of 0 means the exit node does not have a priority
+	// preference. A negative int is not allowed.
+	Priority int `json:",omitempty"`
+}
+
 // Hostinfo contains a summary of a Tailscale host.
 //
 // Because it contains pointers (slices), this type should not be used
@@ -583,6 +602,11 @@ type Hostinfo struct {
 	Cloud           string         `json:",omitempty"`
 	Userspace       opt.Bool       `json:",omitempty"` // if the client is running in userspace (netstack) mode
 	UserspaceRouter opt.Bool       `json:",omitempty"` // if the client's subnet router is running in userspace (netstack) mode
+
+	// Location represents geographical location data about a
+	// Tailscale host. Location is optional and only set if
+	// explicitly declared by a node.
+	Location *Location `json:",omitempty"`
 
 	// NOTE: any new fields containing pointers in this type
 	//       require changes to Hostinfo.Equal.
@@ -2048,6 +2072,10 @@ type SSHAction struct {
 	// to use local port forwarding if requested.
 	AllowLocalPortForwarding bool `json:"allowLocalPortForwarding,omitempty"`
 
+	// AllowRemotePortForwarding, if true, allows accepted connections
+	// to use remote port forwarding if requested.
+	AllowRemotePortForwarding bool `json:"allowRemotePortForwarding,omitempty"`
+
 	// Recorders defines the destinations of the SSH session recorders.
 	// The recording will be uploaded to http://addr:port/record.
 	Recorders []netip.AddrPort `json:"recorders,omitempty"`
@@ -2110,9 +2138,23 @@ type SSHEventNotifyRequest struct {
 type SSHEventType int
 
 const (
-	UnspecifiedSSHEventType       SSHEventType = 0
-	SSHSessionRecordingRejected   SSHEventType = 1
+	UnspecifiedSSHEventType SSHEventType = 0
+	// SSHSessionRecordingRejected is the event that
+	// defines when a SSH session cannot be started
+	// because no recorder is available for session
+	// recording, and the SSHRecorderFailureAction
+	// RejectSessionWithMessage is not empty.
+	SSHSessionRecordingRejected SSHEventType = 1
+	// SSHSessionRecordingTerminated is the event that
+	// defines when session recording has failed
+	// during the session and the SSHRecorderFailureAction
+	// TerminateSessionWithMessage is not empty.
 	SSHSessionRecordingTerminated SSHEventType = 2
+	// SSHSessionRecordingFailed is the event that
+	// defines when session recording is unavailable and
+	// the SSHRecorderFailureAction RejectSessionWithMessage
+	// or TerminateSessionWithMessage is empty.
+	SSHSessionRecordingFailed SSHEventType = 3
 )
 
 // SSHRecordingAttempt is a single attempt to start a recording.

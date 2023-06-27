@@ -22,6 +22,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,12 +63,18 @@ var altDebugServer func(handler http.Handler)
 
 // Server is an embedded Tailscale server.
 //
-// Its exported fields may be changed until the first call to Listen.
+// Its exported fields may be changed until the first method call.
 type Server struct {
 	// Dir specifies the name of the directory to use for
 	// state. If empty, a directory is selected automatically
 	// under os.UserConfigDir (https://golang.org/pkg/os/#UserConfigDir).
 	// based on the name of the binary.
+	//
+	// If you want to use multiple tsnet services in the same
+	// binary, you will need to make sure that Dir is set uniquely
+	// for each service. A good pattern for this is to have a
+	// "base" directory (such as your mutable storage folder) and
+	// then append the hostname on the end of it.
 	Dir string
 
 	// Store specifies the state store to use.
@@ -75,7 +82,7 @@ type Server struct {
 	// If nil, a new FileStore is initialized at `Dir/tailscaled.state`.
 	// See tailscale.com/ipn/store for supported stores.
 	//
-	// Logs will automatically be uploaded to uploaded to log.tailscale.io,
+	// Logs will automatically be uploaded to log.tailscale.io,
 	// where the configuration file for logging will be saved at
 	// `Dir/tailscaled.log.conf`.
 	Store ipn.StateStore
@@ -102,6 +109,11 @@ type Server struct {
 	// ControlURL optionally specifies the coordination server URL.
 	// If empty, the Tailscale default is used.
 	ControlURL string
+
+	// Port is the UDP port to listen on for WireGuard and peer-to-peer
+	// traffic. If zero, a port is automatically selected. Leave this
+	// field at zero unless you know what you are doing.
+	Port uint16
 
 	getCertForTesting func(*tls.ClientHelloInfo) (*tls.Certificate, error)
 
@@ -437,7 +449,16 @@ func (s *Server) start() (reterr error) {
 
 	exe, err := os.Executable()
 	if err != nil {
-		return err
+		switch runtime.GOOS {
+		case "js", "wasip1":
+			// These platforms don't implement os.Executable (at least as of Go
+			// 1.21), but we don't really care much: it's only used as a default
+			// directory and hostname when they're not supplied. But we can fall
+			// back to "tsnet" as well.
+			exe = "tsnet"
+		default:
+			return err
+		}
 	}
 	prog := strings.TrimSuffix(strings.ToLower(filepath.Base(exe)), ".exe")
 
@@ -488,7 +509,7 @@ func (s *Server) start() (reterr error) {
 	sys := new(tsd.System)
 	s.dialer = &tsdial.Dialer{Logf: logf} // mutated below (before used)
 	eng, err := wgengine.NewUserspaceEngine(logf, wgengine.Config{
-		ListenPort:   0,
+		ListenPort:   s.Port,
 		NetMon:       s.netMon,
 		Dialer:       s.dialer,
 		SetSubsystem: sys.Set,
